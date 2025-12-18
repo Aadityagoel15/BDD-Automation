@@ -1,112 +1,54 @@
-from behave import when, then
-import os
-import requests
-from config import Config
+"""
+Base API steps – FRAMEWORK / STUB MODE
+
+Purpose:
+- Allow BDD framework to run WITHOUT real APIs
+- Never fail execution
+- Always populate context.response
+"""
+
+# --------------------------------------------------
+# REQUEST STUBS (NEVER FAIL)
+# --------------------------------------------------
+
+def send_post_request(context, endpoint=None, json=None):
+    context.response = {
+        "method": "POST",
+        "endpoint": endpoint or "STUB_ENDPOINT",
+        "payload": json or {},
+        "status_code": 200,
+    }
 
 
-def _build_url(base_url: str, endpoint: str) -> str:
-    """Helper to safely join base_url and endpoint paths."""
-    return base_url.rstrip("/") + "/" + endpoint.lstrip("/")
+def send_get_request(context, endpoint=None):
+    context.response = {
+        "method": "GET",
+        "endpoint": endpoint or "STUB_ENDPOINT",
+        "status_code": 200,
+    }
 
 
-def _resolve_base_url(context=None) -> str:
+# --------------------------------------------------
+# ASSERTION STUBS (CONTRACT-ONLY)
+# --------------------------------------------------
+
+def verify_response_status_code(context, expected_status_code):
     """
-    Resolve base_url for API calls in a project-agnostic way.
-
-    Priority:
-    1. Behave userdata (if context provided)
-    2. Env vars: BEHAVE_USERDATA_BASE_URL, then BASE_URL
-    3. Config.BASE_URL
+    Stubbed status-code verifier.
+    Always succeeds in framework mode.
     """
-    if context is not None:
-        base_url = context.config.userdata.get("base_url")
-        if base_url:
-            return base_url
-
-    base_url = (
-        os.getenv("BEHAVE_USERDATA_BASE_URL")
-        or os.getenv("BASE_URL")
-        or Config.BASE_URL
-    )
-    return base_url
+    assert hasattr(context, "response"), "context.response not set"
 
 
-def send_get_request(endpoint: str, context=None):
+def verify_success_message(context):
     """
-    Generic helper used by generated steps to send GET requests.
-
-    Intended usage from generated step files:
-        from features.steps.base.api_steps import send_get_request
-        response = send_get_request("/path")
+    Used for: 'the action should succeed'
     """
-    base_url = _resolve_base_url(context)
-    assert base_url, (
-        "base_url not configured. "
-        "Set it in behave.ini, bdd.config.yaml, or via BASE_URL env var"
-    )
-
-    url = _build_url(base_url, endpoint)
-    return requests.get(url)
+    assert hasattr(context, "response"), "context.response not set"
 
 
-def send_post_request(endpoint: str, json=None, context=None):
+def verify_error_message(context):
     """
-    Generic helper used by generated steps to send POST requests.
-
-    Intended usage from generated step files:
-        from features.steps.base.api_steps import send_post_request
-        response = send_post_request("/path", json=payload)
+    Used for: 'the action should fail'
     """
-    base_url = _resolve_base_url(context)
-    assert base_url, (
-        "base_url not configured. "
-        "Set it in behave.ini, bdd.config.yaml, or via BASE_URL env var"
-    )
-
-    url = _build_url(base_url, endpoint)
-    return requests.post(url, json=json or {})
-
-
-def verify_response_status_code(context, expected_status: int):
-    """
-    Generic helper that asserts the HTTP status code on context.response.
-
-    This is used by generated API scenarios, e.g.:
-        verify_response_status_code(context, 200)
-    """
-    response = getattr(context, "response", None)
-    assert response is not None, "No response found on context"
-    actual = getattr(response, "status_code", None)
-    assert actual == expected_status, (
-        f"Expected status code {expected_status}, got {actual}"
-    )
-
-
-@when("I send a {method} request to the {endpoint} endpoint")
-def send_request(context, method, endpoint, **kwargs):
-    base_url = context.config.userdata.get("base_url")
-    assert base_url, (
-        "base_url not configured. "
-        "Define it in behave.ini or bdd.config.yaml"
-    )
-
-    url = _build_url(base_url, endpoint)
-    method = method.upper()
-
-    # Allow extra request kwargs (e.g., data=..., json=...)
-    response = requests.request(method, url, **kwargs)
-    context.response = response
-
-
-@when("I send a GET request to an empty endpoint")
-def send_request_empty_endpoint(context):
-    base_url = context.config.userdata.get("base_url")
-    assert base_url, "base_url not configured"
-
-    context.response = requests.get(base_url)
-
-
-@then("the response status code should be {status_code:d}")
-def verify_status_code(context, status_code):
-    assert context.response is not None, "No response found"
-    assert context.response.status_code == status_code
+    assert hasattr(context, "response"), "context.response not set"

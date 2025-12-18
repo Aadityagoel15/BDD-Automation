@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# ------------------------------------------------------------------
+# Project Type
+# ------------------------------------------------------------------
 class ProjectType:
     """Supported project types"""
     API = "api"
@@ -15,6 +18,18 @@ class ProjectType:
     DATA = "data"
     BACKEND = "backend"
     UNKNOWN = "unknown"
+
+
+# ------------------------------------------------------------------
+# Execution Mode (🔥 KEY ADDITION)
+# ------------------------------------------------------------------
+class ExecutionMode:
+    """
+    FRAMEWORK  → building the framework (no real execution)
+    PROJECT    → executing against a real system
+    """
+    FRAMEWORK = "framework"
+    PROJECT = "project"
 
 
 class Config:
@@ -27,9 +42,17 @@ class Config:
     GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     # ------------------------------------------------------------------
+    # Execution Mode (DEFAULT = FRAMEWORK)
+    # ------------------------------------------------------------------
+    EXECUTION_MODE = os.getenv(
+        "EXECUTION_MODE",
+        ExecutionMode.FRAMEWORK
+    ).lower()
+
+    # ------------------------------------------------------------------
     # Project-level Configuration (optional overrides)
     # ------------------------------------------------------------------
-    PROJECT_TYPE = os.getenv("PROJECT_TYPE", "").lower()  # api | web | data | mobile
+    PROJECT_TYPE = os.getenv("PROJECT_TYPE", "").lower()
     BASE_URL = os.getenv("BASE_URL", "")
 
     # ------------------------------------------------------------------
@@ -37,7 +60,7 @@ class Config:
     # ------------------------------------------------------------------
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     FEATURES_DIR = os.path.join(BASE_DIR, "features")
-    STEP_DEFINITIONS_DIR = os.path.join(BASE_DIR, "features","steps")
+    STEP_DEFINITIONS_DIR = os.path.join(BASE_DIR, "features", "steps")
     REPORTS_DIR = os.path.join(BASE_DIR, "reports")
     REQUIREMENTS_DIR = os.path.join(BASE_DIR, "requirements")
 
@@ -53,18 +76,16 @@ class Config:
     @classmethod
     def ensure_directories(cls):
         """Create necessary directories if they don't exist"""
-        directories = [
+        for directory in (
             cls.FEATURES_DIR,
             cls.STEP_DEFINITIONS_DIR,
             cls.REPORTS_DIR,
             cls.REQUIREMENTS_DIR,
-        ]
-        for directory in directories:
+        ):
             os.makedirs(directory, exist_ok=True)
 
     @classmethod
     def has_explicit_project_type(cls) -> bool:
-        """Check if project type is explicitly configured"""
         return cls.PROJECT_TYPE in {
             ProjectType.API,
             ProjectType.WEB,
@@ -75,10 +96,12 @@ class Config:
 
     @classmethod
     def get_project_type(cls) -> str:
-        """
-        Return explicitly configured project type if present,
-        otherwise UNKNOWN (auto-detection will handle it).
-        """
-        if cls.has_explicit_project_type():
-            return cls.PROJECT_TYPE
-        return ProjectType.UNKNOWN
+        return cls.PROJECT_TYPE if cls.has_explicit_project_type() else ProjectType.UNKNOWN
+
+    @classmethod
+    def is_framework_mode(cls) -> bool:
+        return cls.EXECUTION_MODE == ExecutionMode.FRAMEWORK
+
+    @classmethod
+    def is_project_mode(cls) -> bool:
+        return cls.EXECUTION_MODE == ExecutionMode.PROJECT

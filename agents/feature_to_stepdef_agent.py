@@ -1,9 +1,10 @@
 """
 Agent 2: Feature to Step Definition Agent
 Converts Gherkin .feature files into Python step definitions
-(Project-type aware, base-step constrained)
+(Project-type aware, base-step enforced, AST-safe)
 """
 import os
+import ast
 from groq_client import GroqClient
 from config import Config, ProjectType
 
@@ -13,40 +14,44 @@ class FeatureToStepDefAgent:
 
     def __init__(self):
         self.groq_client = GroqClient()
+
         self.system_prompt = """
 You are an expert BDD automation engineer.
 
-Your task is to generate Python step definitions for Behave
-based on the given Gherkin feature file.
+Your task is to generate Python step definitions for Behave.
 
-CRITICAL RULES (NON-NEGOTIABLE):
-- Generate ONLY valid Python code
+ABSOLUTE RULES (NON-NEGOTIABLE):
+- Output MUST be valid Python code
+- DO NOT include explanations, notes, or assumptions
+- DO NOT include markdown
 - Use behave decorators (@given, @when, @then)
-- Do NOT include explanations or markdown
-- Do NOT hardcode URLs, credentials, tokens, or selectors
-- Use the context object for sharing state
+- NEVER leave a decorator without a function
+- NEVER leave a step body empty
+- NEVER use `pass`
 
-BASE STEP REUSE (VERY IMPORTANT):
-- Prefer reusing existing step definitions from features/steps/base
-- Do NOT recreate steps that already exist in base steps
-- Only generate NEW steps if no suitable base step exists
-- Keep new steps generic and reusable
+BASE STEP DELEGATION (MANDATORY):
+- If a base helper exists, YOU MUST CALL IT
+- Do NOT reimplement HTTP or assertions
 
-Your goal is STABILITY and REUSE, not creativity.
+API PROJECT RULES:
+- Requests MUST assign context.response
+- Assertions MUST read from context.response
+- "the action should succeed" → verify_response_status_code(context, 200)
+- "the action should fail" → verify_response_status_code(context, 400)
+
+If unsure, generate executable Python that raises RuntimeError.
+Creativity is FORBIDDEN. Reuse is REQUIRED.
 """
 
-    # ------------------------------------------------------------------
-    # MAIN METHOD
     # ------------------------------------------------------------------
     def generate_step_definitions(
         self,
         feature_file_path: str,
         project_type: str = ProjectType.UNKNOWN
     ) -> str:
-        """Generate Python step definitions from a Gherkin feature file"""
 
         if not os.path.exists(feature_file_path):
-            raise FileNotFoundError(f"Feature file not found: {feature_file_path}")
+            raise FileNotFoundError(feature_file_path)
 
         with open(feature_file_path, "r", encoding="utf-8") as f:
             feature_content = f.read()
@@ -54,167 +59,147 @@ Your goal is STABILITY and REUSE, not creativity.
         project_rules = self._project_type_rules(project_type)
 
         prompt = f"""
-Generate Python step definitions for the following Gherkin feature.
-
 PROJECT TYPE: {project_type.upper()}
 
-AVAILABLE BASE STEP FILES:
-- features/steps/base/common_steps.py
-- features/steps/base/api_steps.py
-- features/steps/base/web_steps.py
-
-PROJECT-SPECIFIC RULES:
-{project_rules}
+AVAILABLE BASE HELPERS:
+- features.steps.base.api_steps:
+    - send_get_request
+    - send_post_request
+    - verify_response_status_code
 
 FEATURE FILE:
 {feature_content}
 
-OUTPUT REQUIREMENTS:
-- Reuse base steps whenever possible
-- Import only required libraries
-- Keep logic minimal and deterministic
-- Use context consistently
+PROJECT RULES:
+{project_rules}
+
+GENERATION CONTRACT:
+- Requests MUST assign context.response
+- "the action should succeed" → verify_response_status_code(context, 200)
+- "the action should fail" → verify_response_status_code(context, 400)
 
 Return ONLY valid Python code.
 """
 
-        raw_output = self.groq_client.generate_response(
+        raw = self.groq_client.generate_response(
             prompt=prompt,
             system_prompt=self.system_prompt
         )
 
-        cleaned = self._clean_python_code(raw_output)
+        return self._clean_python_code(raw)
 
-        # --------------------------------------------------
-        # FINAL SAFETY: validate Python syntax
-        # --------------------------------------------------
-        try:
-            compile(cleaned, "<generated_steps>", "exec")
-        except SyntaxError as e:
-            raise RuntimeError(
-                "Generated step definitions contain invalid Python syntax.\n"
-                f"Line {e.lineno}: {e.text}"
-            )
-
-        return cleaned
-
-    # ------------------------------------------------------------------
-    # SAVE FILE
     # ------------------------------------------------------------------
     def save_step_definitions(self, step_def_content: str, feature_name: str) -> str:
-        """Save step definitions to a Python file"""
-
         Config.ensure_directories()
 
-        if not feature_name:
-            feature_name = "generated_steps"
-
-        file_path = os.path.join(
+        path = os.path.join(
             Config.STEP_DEFINITIONS_DIR,
             f"{feature_name}_steps.py"
         )
 
-        with open(file_path, "w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.write(step_def_content)
 
-        return file_path
+        return path
 
-    # ------------------------------------------------------------------
-    # PROJECT RULES
     # ------------------------------------------------------------------
     def _project_type_rules(self, project_type: str) -> str:
         if project_type == ProjectType.API:
             return """
-- Prefer existing API base steps
-- Use requests ONLY if no base step exists
-- Store responses in context.response
-- Do NOT generate UI or browser logic
+- Use API base helpers ONLY
+- Never hardcode endpoints or credentials
+- Execution steps MUST assign context.response
 """
 
-        if project_type == ProjectType.WEB:
-            return """
-- Prefer existing Web base steps
-- Use UI placeholder steps only
-- Do NOT use API or HTTP logic
-- Do NOT assume locators or frameworks
-"""
+        return "Generate minimal reusable steps."
 
-        if project_type == ProjectType.MOBILE:
-            return """
-- Generate generic mobile placeholders only
-- Do NOT assume Android or iOS specifics
-"""
-
-        if project_type == ProjectType.DATA:
-            return """
-- Generate data validation placeholders
-- Do NOT use API or UI logic
-"""
-
-        return """
-- Generate generic, framework-agnostic steps
-- Avoid assumptions about system type
-"""
-
-    # ------------------------------------------------------------------
-    # OUTPUT SANITIZATION (CRITICAL)
     # ------------------------------------------------------------------
     def _clean_python_code(self, content: str) -> str:
         """
-        Clean AI output to ensure valid Python code:
-        - Remove markdown fences
-        - Remove stray 'python'
-        - Normalize behave decorators
-        - Ensure function bodies exist
+        HARD SANITIZER:
+        - Removes markdown and prose
+        - Guarantees decorator → function pairing
+        - Guarantees non-empty step bodies
+        - Enforces valid Python AST
         """
 
+        # --------------------------------------------------
         # Remove markdown fences
-        if "```" in content:
-            content = "\n".join(
-                line for line in content.splitlines()
-                if not line.strip().startswith("```")
-            )
+        # --------------------------------------------------
+        content = "\n".join(
+            line for line in content.splitlines()
+            if not line.strip().startswith("```")
+        )
 
         # Remove stray 'python'
         if content.strip().lower().startswith("python"):
             content = content.split("\n", 1)[1]
 
-        lines = content.splitlines()
-        fixed_lines = []
+        # --------------------------------------------------
+        # Remove natural language junk
+        # --------------------------------------------------
+        filtered_lines = []
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith((
+                "Note:",
+                "Explanation:",
+                "Assumption:",
+                "This implementation",
+                "You should",
+                "It is assumed",
+            )):
+                continue
+            filtered_lines.append(line)
+
+        lines = filtered_lines
+        final_lines = []
         i = 0
 
         while i < len(lines):
             line = lines[i].rstrip()
+            stripped = line.strip()
 
             # --------------------------------------------------
-            # FIX BEHAVE DECORATORS (CRITICAL)
+            # DECORATOR SAFETY (CRITICAL)
             # --------------------------------------------------
-            if line.strip().startswith("@"):
-                start = line.find("(")
-                end = line.rfind(")")
-                if start != -1 and end != -1:
-                    inner = line[start + 1:end].strip()
+            if stripped.startswith("@"):
+                final_lines.append(line)
 
-                    # Remove surrounding quotes
-                    if inner.startswith(("'", '"')) and inner.endswith(("'", '"')):
-                        inner = inner[1:-1]
+                next_line = lines[i + 1].strip() if i + 1 < len(lines) else ""
+                if not next_line.startswith("def "):
+                    final_lines.append("def step_impl(context):")
+                    final_lines.append(
+                        "    raise RuntimeError('Step body not implemented')"
+                    )
 
-                    # Remove quoted placeholders
-                    inner = inner.replace("'{", "{").replace("}'", "}")
-                    inner = inner.replace('"{', "{").replace('}"', "}")
+                i += 1
+                continue
 
-                    # Always wrap in double quotes
-                    line = f'{line[:start+1]}"{inner}"{line[end:]}'
-
-            fixed_lines.append(line)
+            final_lines.append(line)
 
             # --------------------------------------------------
-            # ENSURE FUNCTION BODY EXISTS
+            # ENSURE FUNCTION BODY
             # --------------------------------------------------
-            if line.strip().startswith("def ") and line.strip().endswith(":"):
+            if stripped.startswith("def ") and stripped.endswith(":"):
                 if i + 1 >= len(lines) or not lines[i + 1].startswith((" ", "\t")):
-                    fixed_lines.append("    pass")
+                    final_lines.append(
+                        "    raise RuntimeError('Step body not implemented')"
+                    )
 
             i += 1
 
-        return "\n".join(fixed_lines).strip()
+        final_code = "\n".join(final_lines).strip()
+
+        # --------------------------------------------------
+        # FINAL AUTHORITY: AST VALIDATION
+        # --------------------------------------------------
+        try:
+            ast.parse(final_code)
+        except SyntaxError as e:
+            raise RuntimeError(
+                "AI generated invalid Python.\n"
+                f"Line {e.lineno}: {e.text}"
+            )
+
+        return final_code
