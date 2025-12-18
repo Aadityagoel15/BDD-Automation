@@ -1,0 +1,38 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test outputs
+reports/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Generated files (optional - uncomment if you don't want to track generated files)
+# features/*.feature
+# step_definitions/*_steps.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+
+
+
+

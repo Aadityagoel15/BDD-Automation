@@ -1,0 +1,52 @@
+HOW TO TEST YOUR BDD AUTOMATION SYSTEM
+========================================
+
+STEP 1: Install Dependencies
+-----------------------------
+pip install -r requirements.txt
+
+STEP 2: Set Up API Key
+-----------------------
+1. Copy env_template.txt to .env
+2. Edit .env and add: GROQ_API_KEY=your_actual_key_here
+3. Get your key from: https://console.groq.com/
+
+STEP 3: Run System Test
+------------------------
+python test_system.py
+
+This will check:
+- All modules can be imported
+- All dependencies are installed
+- Configuration is correct
+- Groq API connection works
+- All agents can be initialized
+- Simple end-to-end test
+
+STEP 4: Test Full Pipeline
+---------------------------
+python orchestrator.py --requirements "As a user, I want to login so that I can access my account" --feature-name login_test
+
+STEP 5: Check Results
+---------------------
+- Feature file: features/login_test.feature
+- Step definitions: step_definitions/login_test_steps.py
+- Reports: reports/test_report_*.json and *.txt
+- Defects: reports/defect_report_*.txt
+
+QUICK TEST (No API Required)
+-----------------------------
+If you just want to check if code is correct:
+python -c "from config import Config; print('Config OK')"
+
+TROUBLESHOOTING
+---------------
+- Module not found: Run pip install -r requirements.txt
+- API key error: Check .env file exists with GROQ_API_KEY
+- Import error: Make sure you're in the project root directory
+
+
+
+
+
+

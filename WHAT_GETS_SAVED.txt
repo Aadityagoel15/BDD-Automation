@@ -1,0 +1,77 @@
+================================================================================
+REPORTS AND DEFECTS - WHAT GETS SAVED AUTOMATICALLY
+================================================================================
+
+✅ REPORTS ARE ALREADY BEING SAVED!
+
+When you run the pipeline, these files are automatically created:
+
+REPORTS (Always Saved)
+----------------------
+Location: reports/
+
+1. test_report_YYYYMMDD_HHMMSS.json
+   - Complete test report in JSON format
+   - Contains: summary, metrics, insights, status
+
+2. test_report_summary_YYYYMMDD_HHMMSS.txt
+   - Human-readable test report
+   - Contains: statistics, AI insights, recommendations
+
+DEFECTS (Saved When Test Failures Occur)
+-----------------------------------------
+Location: reports/
+
+1. defects_YYYYMMDD_HHMMSS.json
+   - All defects in JSON format
+   - Contains: defect details, severity, analysis
+
+2. defect_report_YYYYMMDD_HHMMSS.txt
+   - Human-readable defect report
+   - Contains: defect descriptions, reproduction steps, fixes
+
+EXECUTION DATA (Always Saved)
+------------------------------
+Location: reports/
+
+1. execution_report_YYYYMMDD_HHMMSS.json
+   - Raw execution results from behave
+   - Detailed step-by-step data
+
+================================================================================
+CURRENT STATUS
+================================================================================
+
+✅ Reports: BEING SAVED
+✅ Defects: WILL BE SAVED when tests fail
+✅ All files: Automatically saved with timestamps
+
+================================================================================
+HOW TO ACCESS
+================================================================================
+
+View Latest Report:
+  Get-Content (Get-ChildItem reports\test_report_summary_*.txt | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+
+View Latest Defects:
+  Get-ChildItem reports\defect_report_*.txt | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+List All Reports:
+  dir reports\*.txt
+  dir reports\*.json
+
+================================================================================
+NOTE
+================================================================================
+
+If you see "Defects identified: 0", it means:
+- Tests passed (no failures)
+- No defects file is created (no failures to analyze)
+
+When tests fail, defect files WILL be automatically created and saved.
+
+
+
+
+
+
