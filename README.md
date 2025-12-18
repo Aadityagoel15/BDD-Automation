@@ -220,45 +220,7 @@ Test the full pipeline with a simple requirement:
 python orchestrator.py --requirements "As a user, I want to click a button so that I can submit a form" --feature-name test_feature
 ```
 
-Or use the example script:
-
-```bash
-python example_usage.py
-```
-
 For detailed testing instructions, see [TESTING.md](TESTING.md)
-
-## Deployment
-
-To deploy these AI agents in your project, see the deployment guides:
-
-- **[QUICK_DEPLOY.md](QUICK_DEPLOY.md)** - Fast 5-minute deployment guide
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Comprehensive deployment documentation with multiple options:
-  - Standalone integration
-  - Package installation
-  - Docker deployment
-  - REST API wrapper
-  - CI/CD integration
-
-### Quick Deployment Example:
-
-```bash
-# Copy agents to your project
-mkdir -p bdd_agents/agents
-cp -r agents/* bdd_agents/agents/
-cp config.py groq_client.py orchestrator.py bdd_agents/
-
-# Install dependencies
-pip install groq python-dotenv behave
-
-# Set up API key
-echo "GROQ_API_KEY=your_key" > .env
-
-# Use in your code
-from bdd_agents.orchestrator import BDDAutomationOrchestrator
-orchestrator = BDDAutomationOrchestrator()
-results = orchestrator.run_full_pipeline(requirements="...", feature_name="test")
-```
 
 ## Troubleshooting
 
@@ -267,7 +229,6 @@ results = orchestrator.run_full_pipeline(requirements="...", feature_name="test"
 3. **Behave Not Found**: Install behave: `pip install behave`
 4. **Module Not Found**: Ensure you're running from the project root directory
 5. **Test Script Fails**: Run `python test_system.py` to identify specific issues
-6. **Deployment Issues**: See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment troubleshooting
 
 ## Extending the System
 

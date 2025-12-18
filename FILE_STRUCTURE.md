@@ -71,12 +71,11 @@ step_definitions/
 ├── sample_login_steps.py                🧪 Example - Can delete
 └── README.md                            📚 Documentation
 
-example_usage.py                         🧪 Example script
 test_system.py                           ✅ Useful - System test script
 setup_and_run.bat                        ✅ Useful - Windows setup script
 ```
 
-**Examples can be deleted** - They're just to show you the format.
+**Examples can be deleted** - They're just to show you the format (except test_system.py and setup_and_run.bat, which are helpful utilities).
 
 ---
 
@@ -142,13 +141,10 @@ If you want a cleaner project, you can delete:
 ```
 ❌ QUICKSTART.md
 ❌ HOW_TO_RUN.md (unless you need it)
-❌ DEPLOYMENT.md (unless deploying)
-❌ QUICK_DEPLOY.md
 ❌ TESTING.md
 ❌ ARCHITECTURE.md
 ❌ GENERAL_PURPOSE_GUIDE.md
 ❌ FILE_STRUCTURE.md
-❌ RUN_ME_FIRST.txt
 ❌ HOW_TO_TEST.txt
 ```
 
@@ -158,15 +154,6 @@ If you want a cleaner project, you can delete:
 ❌ features/sample_shopping_cart.feature
 ❌ step_definitions/sample_login_steps.py
 ❌ step_definitions/README.md
-❌ example_usage.py
-```
-
-### Optional Setup Files
-```
-❌ setup.py (unless packaging)
-❌ Dockerfile (unless using Docker)
-❌ docker-compose.yml (unless using Docker)
-❌ setup_and_run.bat (unless you like it)
 ```
 
 **Total deletable: ~20 files**
