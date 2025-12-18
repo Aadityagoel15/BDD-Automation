@@ -67,8 +67,23 @@ def send_post_request(endpoint: str, json=None, context=None):
     return requests.post(url, json=json or {})
 
 
+def verify_response_status_code(context, expected_status: int):
+    """
+    Generic helper that asserts the HTTP status code on context.response.
+
+    This is used by generated API scenarios, e.g.:
+        verify_response_status_code(context, 200)
+    """
+    response = getattr(context, "response", None)
+    assert response is not None, "No response found on context"
+    actual = getattr(response, "status_code", None)
+    assert actual == expected_status, (
+        f"Expected status code {expected_status}, got {actual}"
+    )
+
+
 @when("I send a {method} request to the {endpoint} endpoint")
-def send_request(context, method, endpoint):
+def send_request(context, method, endpoint, **kwargs):
     base_url = context.config.userdata.get("base_url")
     assert base_url, (
         "base_url not configured. "
@@ -78,7 +93,8 @@ def send_request(context, method, endpoint):
     url = _build_url(base_url, endpoint)
     method = method.upper()
 
-    response = requests.request(method, url)
+    # Allow extra request kwargs (e.g., data=..., json=...)
+    response = requests.request(method, url, **kwargs)
     context.response = response
 
 
