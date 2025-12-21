@@ -243,6 +243,9 @@ class BDDAutomationOrchestrator:
 # ----------------------------------------------------------------------
 # CLI ENTRY POINT
 # ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# CLI ENTRY POINT
+# ----------------------------------------------------------------------
 def main():
     import argparse
 
@@ -270,15 +273,35 @@ def main():
             project_path=args.project_path,
             feature_name=args.feature_name
         )
+
     else:
         if not args.requirements:
             sys.exit("Error: --requirements is required")
 
-        if os.path.isfile(args.requirements):
-            with open(args.requirements, "r", encoding="utf-8") as f:
+        # --------------------------------------------------
+        # SMART REQUIREMENTS RESOLUTION
+        # --------------------------------------------------
+        req_input = args.requirements
+        req_path = None
+
+        # Case 1: Full / relative path provided
+        if os.path.isfile(req_input):
+            req_path = req_input
+
+        # Case 2: File exists inside requirements/ folder
+        else:
+            candidate = os.path.join(Config.REQUIREMENTS_DIR, req_input)
+            if os.path.isfile(candidate):
+                req_path = candidate
+
+        # Load requirements
+        if req_path:
+            print(f"[INFO] Loading requirements from file: {req_path}")
+            with open(req_path, "r", encoding="utf-8") as f:
                 requirements_text = f.read()
         else:
-            requirements_text = args.requirements
+            print("[INFO] Using inline requirements text")
+            requirements_text = req_input
 
         results = orchestrator.run_full_pipeline(
             requirements=requirements_text,
@@ -288,7 +311,3 @@ def main():
     print("\nRESULTS SUMMARY")
     print("=" * 80)
     print(results)
-
-
-if __name__ == "__main__":
-    main()

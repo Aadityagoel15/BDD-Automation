@@ -1,3 +1,5 @@
+from datetime import datetime
+
 """
 Agent 1: Requirements to .feature file Agent
 Converts requirements/user stories into Gherkin .feature files
@@ -86,7 +88,11 @@ Return ONLY the feature file content.
         Config.ensure_directories()
 
         feature_name = feature_name or "generated_feature"
-        path = os.path.join(Config.FEATURES_DIR, f"{feature_name}.feature")
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{feature_name}_{timestamp}.feature"
+
+        path = os.path.join(Config.FEATURES_DIR, filename)
 
         with open(path, "w", encoding="utf-8") as f:
             f.write(feature_content)
