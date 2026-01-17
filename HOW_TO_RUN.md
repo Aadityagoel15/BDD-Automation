@@ -92,8 +92,10 @@ If this fails:
 
 ## 6️⃣ Run the full AI pipeline (example)
 
-This demonstrates the complete flow:
-**requirements → feature → step definitions → execution → reports → defects**
+This runs the full flow:
+**requirements → (web) discovery → feature → step definitions → execution → reports → defects**
+
+> ℹ️ For web projects, set `BASE_URL` in `.env` or `bdd.config.yaml` so discovery and Behave can reach the site.
 
 ```powershell
 python orchestrator.py \
@@ -105,10 +107,11 @@ python orchestrator.py \
 
 * Generates a feature file → `features/login_feature.feature`
 * Generates step definitions → `features/steps/login_feature_steps.py`
-* Executes Behave tests against `BASE_URL` (if provided)
+* (Web) Discovers UI and writes locators to `reports/ui_locators.properties`
+* Executes Behave tests against `BASE_URL`
 * Writes reports and defect summaries under `reports/`
 
-> ⚠️ If no API is running at `BASE_URL`, Behave may report scenario errors, but **the pipeline itself will still complete successfully**.
+> ⚠️ If the target app/API at `BASE_URL` is unreachable, Behave will fail execution after generation completes.
 
 ---
 
@@ -122,32 +125,150 @@ python orchestrator.py --requirements "Your API requirements here" --feature-nam
 
 ### Requirements from file
 
+Create a requirements file (e.g., `requirements/my_test.txt`) and run:
+
 ```powershell
-python orchestrator.py --requirements requirements.txt --feature-name my_feature
+python orchestrator.py --requirements requirements/my_test.txt --feature-name my_feature
 ```
+
+### Example Requirements
+
+Below are example requirements you can use as templates for your own tests:
+
+#### Example 1: Simple Web Navigation
+```
+Navigate to the URL https://your-application-url.com/
+Click on the "Dashboard" link
+Verify that the dashboard page is displayed
+Verify page title contains "Dashboard"
+```
+
+#### Example 2: Login Flow (Generic)
+```
+Navigate to the URL https://your-application-url.com/
+Login with username "your_username" and password "your_password"
+Verify that login was successful
+Verify user is redirected to the home page
+```
+
+#### Example 3: Form Submission
+```
+Navigate to the URL https://your-application-url.com/contact
+Enter "John Doe" into the "name" field
+Enter "john@example.com" into the "email" field
+Enter "This is a test message" into the "message" field
+Click the "Submit" button
+Verify that the success message "Thank you for your message!" is displayed
+```
+
+#### Example 4: Search Functionality
+```
+Navigate to the URL https://your-application-url.com/
+Enter "search term" into the "search" field
+Click the "Search" button
+Verify that search results are displayed
+Verify results contain "search term"
+```
+
+#### Example 5: API Testing - User Registration
+```
+Test POST /api/users endpoint
+Request body: {"username": "testuser", "email": "test@example.com", "password": "testpass123"}
+Verify response status is 201
+Verify response contains "user_id"
+Verify response contains "username" field with value "testuser"
+```
+
+#### Example 6: API Testing - Get Data
+```
+Test GET /api/products endpoint
+Verify response status is 200
+Verify response is a JSON array
+Verify each item in array contains "id", "name", and "price" fields
+```
+
+#### Example 7: Multi-Step Workflow
+```
+Navigate to the URL https://your-application-url.com/
+Click on the "Settings" menu
+Click on "Profile" option
+Enter "New Name" into the "full name" field
+Enter "newemail@example.com" into the "email" field
+Click the "Save" button
+Verify that the success message "Profile updated successfully" is displayed
+```
+
+#### Example 8: Data Validation
+---
+
+## 🔍 Handling Locators on New Sites
+
+The framework is site-agnostic. Locator resolution order:
+1) Discovered selectors
+2) Overrides in `reports/ui_locators.properties`
+3) Heuristics (camelCase/kebab/nospace/underscore)
+4) Visible text fallback
+
+For reliability on unfamiliar sites, add critical locators to `reports/ui_locators.properties`, for example:
+```text
+first-name=[data-test="firstName"]
+submit-button=#submit
+```
+
+Then rerun:
+```powershell
+python orchestrator.py --requirements requirements/my_test.txt --feature-name my_test
+```
+```
+Navigate to the URL https://your-application-url.com/register
+Enter "invalid-email" into the "email" field
+Click the "Register" button
+Verify that error message "Please enter a valid email address" is displayed
+```
+
+#### Example 9: Navigation Flow
+```
+Navigate to the URL https://your-application-url.com/
+Click on the "About" link
+Verify user is on the about page
+Click on the "Contact" link
+Verify user is on the contact page
+Click on the "Home" link
+Verify user is back on the home page
+```
+
+#### Example 10: Button/Action Testing
+```
+Navigate to the URL https://your-application-url.com/
+Click the "Download" button
+Verify that download started
+OR
+Click the "Export" button
+Verify that export file is generated
+Verify file contains expected data
+```
+
+### Writing Requirements Tips
+
+- **Use plain English** to describe what should happen
+- **Include URLs, button names, field names** as they appear in your app
+- **Specify verification steps** to check expected outcomes
+- **Use quotes** for exact text matches: "Submit", "Error message"
+- **Describe user actions**: click, enter, select, navigate
+- **Use verification verbs**: verify, check, should see, should contain
+
+### Common Patterns
+
+- **Navigation**: `Navigate to the URL ...`
+- **Actions**: `Click on ...`, `Enter ... into ...`, `Select ...`
+- **Verification**: `Verify that ...`, `Check if ...`, `Should see ...`
+- **Login**: `Login with username ... and password ...`
+
+The framework will automatically convert these to executable test steps!
 
 ---
 
-## 8️⃣ Extract requirements from an existing project (optional)
-
-```powershell
-python orchestrator.py \
-  --stage extract_and_generate \
-  --project-path "C:\\Path\\To\\YourProject" \
-  --feature-name project_tests
-```
-
-This will:
-
-* Analyze code / documentation
-* Extract testable requirements
-* Generate feature files under `features/`
-
-> ❌ This mode **does NOT execute Behave tests** automatically.
-
----
-
-## 9️⃣ Output locations
+## 8️⃣ Output locations
 
 | Artifact         | Location                                 |
 | ---------------- | ---------------------------------------- |
@@ -157,10 +278,11 @@ This will:
 | AI test report   | `reports/test_report_*.json`             |
 | Summary report   | `reports/test_report_summary_*.txt`      |
 | Defect report    | `reports/defects_*.json`                 |
+| UI locators (web)| `reports/ui_locators.properties`         |
 
 ---
 
-## 🔟 What NOT to modify ❌ (Critical)
+## 9️⃣ What NOT to modify ❌ (Critical)
 
 Do **NOT** edit:
 
@@ -210,6 +332,7 @@ pip install -r requirements.txt
 For deeper details, see:
 
 * `README.md` – high‑level overview
-* `QUICKSTART.md` – short quickstart
-* `PROJECT_EXTRACTION_GUIDE.md` – extracting from projects
-* `REPORTS_AND_DEFECTS.md` – understanding reports and defects
+* `SETUP_GUIDE.md` – complete setup steps
+* `ARCHITECTURE.md` – pipeline and agent roles
+* `FILE_STRUCTURE.md` – required/generated files
+* `TESTING.md` – ways to verify the system

@@ -1,266 +1,292 @@
 """
 Requirements Extraction Agent
-Extracts testing requirements from project files, code, documentation, etc.
+
+ROLE:
+- Extract testable requirements from source code, documentation,
+  user stories, and project files.
+- Focus strictly on WHAT should be tested, not HOW it is implemented.
 """
+
 import os
-import re
 from pathlib import Path
 from groq_client import GroqClient
 from config import Config
 
+
 class RequirementsExtractionAgent:
-    """Agent that extracts requirements from projects for BDD testing"""
-    
+    """
+    Agent that extracts testable requirements for BDD testing.
+
+    IMPORTANT:
+    - This agent does NOT write Gherkin
+    - This agent does NOT write code
+    - This agent does NOT invent UI elements or workflows
+    """
+
+    # ------------------------------------------------------------------
+    # SYSTEM PROMPT (PERSONA)
+    # ------------------------------------------------------------------
+    SYSTEM_PROMPT = """
+You are a Senior Automation Test Engineer with 10+ years of experience in test automation.
+
+YOUR EXPERTISE:
+- Python programming for automation (expert-level)
+- Playwright automation framework (primary tool)
+- BDD (Behavior-Driven Development) methodologies
+- Test requirement analysis and extraction
+- Creating maintainable, scalable automation frameworks
+
+YOUR ROLE AS REQUIREMENTS EXTRACTION SPECIALIST:
+- Extract ONLY testable behaviors from various sources
+- Focus on user actions and observable outcomes
+- Translate business requirements into testable scenarios
+- Identify what can be verified through automation
+
+CORE RESPONSIBILITIES:
+- Extract ONLY testable behaviors
+- Focus on user actions and observable outcomes
+- Ignore implementation details (code structure, libraries, frameworks)
+- Do NOT invent UI elements, API endpoints, or workflows
+- Do NOT write code or step definitions at this stage
+- Do NOT write Playwright, XPath, or selectors yet
+
+RULES:
+- Think in terms of "what can be verified by a test using Playwright"
+- Prefer clear, atomic requirements
+- Avoid vague, abstract, or non-testable statements
+- If information is missing, do NOT guess
+- Consider how requirements will translate to automated test scenarios
+
+OUTPUT STYLE:
+- Concise and structured
+- Test-oriented and actionable
+- Suitable for later conversion into BDD feature files
+- Professional automation engineer perspective
+"""
+
     def __init__(self):
         self.groq_client = GroqClient()
-        self.system_prompt = """You are an expert in software testing and requirements analysis.
-Your task is to analyze project files, code, documentation, or user stories and extract testable requirements.
 
-Guidelines:
-1. Extract user stories or functional requirements
-2. Identify testable features and functionalities
-3. Convert technical details into user-focused requirements
-4. Format as clear, testable user stories following BDD format
-5. Include acceptance criteria when available
-6. Be comprehensive but organized
-7. Group related requirements together
-8. Focus on what can be tested, not implementation details
-"""
-    
+    # ------------------------------------------------------------------
+    # SOURCE CODE ANALYSIS
+    # ------------------------------------------------------------------
     def extract_from_code(self, code_content: str, file_path: str = None) -> str:
         """
-        Extract requirements from source code
-        
+        Extract testable requirements from source code.
+
         Args:
             code_content: Source code content
             file_path: Optional file path for context
-            
+
         Returns:
-            Extracted requirements as text
+            Extracted requirements text
         """
-        file_type = "unknown"
-        if file_path:
-            file_type = Path(file_path).suffix
-        
-        prompt = f"""Analyze the following source code and extract testable requirements:
+        file_type = Path(file_path).suffix if file_path else "unknown"
+
+        prompt = f"""
+Analyze the following source code and extract ONLY testable requirements.
 
 FILE TYPE: {file_type}
-CODE:
-{code_content[:5000]}  # Limit to first 5000 chars
 
-Extract:
-1. Main functionalities
-2. User-facing features
-3. Business logic that needs testing
-4. Edge cases or error handling
-5. Input validation requirements
+CODE (PARTIAL):
+{code_content[:5000]}
 
-Format as clear user stories or requirements suitable for BDD testing."""
-        
+EXTRACT:
+- User-visible behaviors
+- Functional outcomes
+- Error or failure conditions
+- Validation rules
+- Edge cases that should be tested
+
+DO NOT:
+- Describe internal functions or classes
+- Mention implementation details
+- Assume UI or API behavior not explicitly visible
+
+FORMAT OUTPUT AS:
+- A bullet list of clear, testable requirements
+"""
+
         try:
-            requirements = self.groq_client.generate_response(prompt, self.system_prompt)
-            return requirements
+            return self.groq_client.generate_response(prompt, self.SYSTEM_PROMPT)
         except Exception as e:
             return f"Error extracting requirements from code: {str(e)}"
-    
-    def extract_from_documentation(self, doc_content: str, doc_type: str = "README") -> str:
+
+    # ------------------------------------------------------------------
+    # DOCUMENTATION ANALYSIS
+    # ------------------------------------------------------------------
+    def extract_from_documentation(self, doc_content: str, doc_type: str = "Documentation") -> str:
         """
-        Extract requirements from documentation files
-        
-        Args:
-            doc_content: Documentation content
-            doc_type: Type of documentation (README, API docs, etc.)
-            
-        Returns:
-            Extracted requirements as text
+        Extract requirements from documentation files.
         """
-        prompt = f"""Analyze the following {doc_type} documentation and extract testable requirements:
+        prompt = f"""
+Analyze the following {doc_type} and extract testable requirements.
 
-DOCUMENTATION:
-{doc_content[:5000]}  # Limit to first 5000 chars
+DOCUMENT CONTENT:
+{doc_content[:5000]}
 
-Extract:
-1. Features described
-2. User stories mentioned
-3. Functional requirements
-4. Acceptance criteria
-5. Use cases
+EXTRACT:
+- Features described
+- User-facing behavior
+- Functional requirements
+- Acceptance conditions (if present)
 
-Format as clear, testable user stories suitable for BDD testing."""
-        
+DO NOT:
+- Rewrite documentation
+- Add assumptions
+- Invent missing behavior
+
+FORMAT OUTPUT AS:
+- Clear, testable requirements suitable for BDD
+"""
+
         try:
-            requirements = self.groq_client.generate_response(prompt, self.system_prompt)
-            return requirements
+            return self.groq_client.generate_response(prompt, self.SYSTEM_PROMPT)
         except Exception as e:
             return f"Error extracting requirements from documentation: {str(e)}"
-    
+
+    # ------------------------------------------------------------------
+    # USER STORY ANALYSIS
+    # ------------------------------------------------------------------
     def extract_from_user_stories(self, user_stories: str) -> str:
         """
-        Extract and format requirements from user stories text
-        
-        Args:
-            user_stories: User stories text
-            
-        Returns:
-            Formatted requirements
+        Normalize and extract requirements from user stories text.
         """
-        prompt = f"""Analyze the following user stories and extract/format them as testable requirements:
+        prompt = f"""
+Analyze the following user stories and extract testable requirements.
 
 USER STORIES:
 {user_stories}
 
-Extract and format:
-1. Clear user stories following the pattern: "As a [user], I want [action] so that [benefit]"
-2. Acceptance criteria
-3. Edge cases
-4. Test scenarios
+TASK:
+- Identify the underlying testable behaviors
+- Extract acceptance criteria where implied
+- Highlight edge or failure scenarios
 
-Ensure all requirements are testable and suitable for BDD feature files."""
-        
+FORMAT OUTPUT AS:
+- A structured list of testable requirements
+- Each requirement must be verifiable by automation
+"""
+
         try:
-            requirements = self.groq_client.generate_response(prompt, self.system_prompt)
-            return requirements
+            return self.groq_client.generate_response(prompt, self.SYSTEM_PROMPT)
         except Exception as e:
             return f"Error processing user stories: {str(e)}"
-    
+
+    # ------------------------------------------------------------------
+    # PROJECT DIRECTORY SCAN
+    # ------------------------------------------------------------------
     def extract_from_project_directory(self, project_path: str, file_extensions: list = None) -> dict:
         """
-        Extract requirements from all relevant files in a project directory
-        
-        Args:
-            project_path: Path to project directory
-            file_extensions: List of file extensions to analyze (e.g., ['.py', '.js', '.md'])
-            
+        Extract requirements from a project directory.
+
         Returns:
-            Dictionary with extracted requirements organized by file/type
+            Dictionary containing per-file and combined requirements
         """
         if file_extensions is None:
             file_extensions = ['.py', '.js', '.ts', '.java', '.md', '.txt', '.yaml', '.yml', '.json']
-        
+
         project_path = Path(project_path)
         if not project_path.exists():
             return {"error": f"Project path does not exist: {project_path}"}
-        
-        extracted_requirements = {
+
+        ignore_patterns = {
+            '__pycache__', '.git', 'node_modules', 'venv', 'env',
+            '.pytest_cache', 'coverage', 'dist', 'build', '.idea', '.vscode'
+        }
+
+        extracted = {
             "project_path": str(project_path),
             "requirements_by_file": {},
             "combined_requirements": ""
         }
-        
-        # Common ignore patterns
-        ignore_patterns = [
-            '__pycache__', '.git', 'node_modules', 'venv', 'env', 
-            '.pytest_cache', 'coverage', 'dist', 'build', '.idea', '.vscode'
-        ]
-        
-        requirements_parts = []
-        
-        # Scan for documentation files first
-        doc_files = []
-        for ext in ['.md', '.txt', 'README', 'CHANGELOG', 'CONTRIBUTING']:
-            for doc_file in project_path.rglob(f"*{ext}*"):
-                if not any(ignore in str(doc_file) for ignore in ignore_patterns):
-                    doc_files.append(doc_file)
-        
-        # Extract from documentation
-        for doc_file in doc_files[:5]:  # Limit to first 5 docs
-            try:
-                with open(doc_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                    if len(content) > 100:  # Only process substantial files
+
+        collected_requirements = []
+
+        # -------- Documentation first --------
+        for doc_file in project_path.rglob("*"):
+            if any(p in str(doc_file) for p in ignore_patterns):
+                continue
+
+            if doc_file.suffix.lower() in {'.md', '.txt'} and doc_file.is_file():
+                try:
+                    content = doc_file.read_text(encoding="utf-8", errors="ignore")
+                    if len(content) > 200:
                         reqs = self.extract_from_documentation(content, doc_file.name)
-                        extracted_requirements["requirements_by_file"][doc_file.name] = reqs
-                        requirements_parts.append(f"## Requirements from {doc_file.name}\n{reqs}")
-            except Exception as e:
-                continue
-        
-        # Scan for source code files
-        code_files = []
-        for ext in file_extensions:
-            for code_file in project_path.rglob(f"*{ext}"):
-                if not any(ignore in str(code_file) for ignore in ignore_patterns):
-                    if code_file.is_file() and code_file.stat().st_size < 100000:  # Files < 100KB
-                        code_files.append(code_file)
-        
-        # Extract from code (sample approach - analyze key files)
-        key_files = sorted(code_files, key=lambda x: x.stat().st_size, reverse=True)[:10]  # Top 10 largest files
-        
-        for code_file in key_files:
+                        extracted["requirements_by_file"][doc_file.name] = reqs
+                        collected_requirements.append(f"## {doc_file.name}\n{reqs}")
+                except Exception:
+                    continue
+
+        # -------- Source code (top relevant files) --------
+        code_files = [
+            f for f in project_path.rglob("*")
+            if f.is_file()
+            and f.suffix in file_extensions
+            and not any(p in str(f) for p in ignore_patterns)
+            and f.stat().st_size < 100_000
+        ]
+
+        for code_file in sorted(code_files, key=lambda x: x.stat().st_size, reverse=True)[:10]:
             try:
-                with open(code_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                    if len(content) > 200:  # Only process substantial files
-                        reqs = self.extract_from_code(content, str(code_file))
-                        extracted_requirements["requirements_by_file"][code_file.name] = reqs
-                        requirements_parts.append(f"## Requirements from {code_file.name}\n{reqs}")
-            except Exception as e:
+                content = code_file.read_text(encoding="utf-8", errors="ignore")
+                if len(content) > 300:
+                    reqs = self.extract_from_code(content, str(code_file))
+                    extracted["requirements_by_file"][code_file.name] = reqs
+                    collected_requirements.append(f"## {code_file.name}\n{reqs}")
+            except Exception:
                 continue
-        
-        # Combine all requirements
-        extracted_requirements["combined_requirements"] = "\n\n".join(requirements_parts)
-        
-        return extracted_requirements
-    
-    def extract_from_api_spec(self, api_spec_content: str, spec_type: str = "OpenAPI") -> str:
+
+        extracted["combined_requirements"] = "\n\n".join(collected_requirements)
+        return extracted
+
+    # ------------------------------------------------------------------
+    # API SPEC EXTRACTION
+    # ------------------------------------------------------------------
+    def extract_from_api_spec(self, api_spec_content: str, spec_type: str = "API") -> str:
         """
-        Extract requirements from API specifications (OpenAPI, Swagger, etc.)
-        
-        Args:
-            api_spec_content: API specification content
-            spec_type: Type of specification (OpenAPI, Swagger, GraphQL, etc.)
-            
-        Returns:
-            Extracted requirements as text
+        Extract requirements from API specifications.
         """
-        prompt = f"""Analyze the following {spec_type} API specification and extract testable requirements:
+        prompt = f"""
+Analyze the following {spec_type} specification and extract testable API requirements.
 
-API SPECIFICATION:
-{api_spec_content[:5000]}  # Limit to first 5000 chars
+API SPEC (PARTIAL):
+{api_spec_content[:5000]}
 
-Extract:
-1. API endpoints
-2. Request/response scenarios
-3. Authentication requirements
-4. Error handling cases
-5. Validation rules
+EXTRACT:
+- Endpoints and supported operations
+- Success scenarios
+- Error scenarios
+- Validation rules
+- Authentication requirements (if stated)
 
-Format as clear user stories suitable for API BDD testing:
-- "As a developer, I want to test [endpoint] with [scenario] so that [expected result]"
+FORMAT OUTPUT AS:
+- Testable API requirements suitable for BDD-style testing
 """
-        
+
         try:
-            requirements = self.groq_client.generate_response(prompt, self.system_prompt)
-            return requirements
+            return self.groq_client.generate_response(prompt, self.SYSTEM_PROMPT)
         except Exception as e:
             return f"Error extracting requirements from API spec: {str(e)}"
-    
+
+    # ------------------------------------------------------------------
+    # SAVE REQUIREMENTS
+    # ------------------------------------------------------------------
     def save_extracted_requirements(self, requirements: str, output_file: str = None) -> str:
         """
-        Save extracted requirements to a file
-        
-        Args:
-            requirements: Extracted requirements text
-            output_file: Output file path (optional)
-            
-        Returns:
-            Path to saved file
+        Save extracted requirements to a file.
         """
         Config.ensure_directories()
-        
+
         if not output_file:
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_file = os.path.join(Config.REQUIREMENTS_DIR, f"extracted_requirements_{timestamp}.txt")
-        
-        with open(output_file, 'w', encoding='utf-8') as f:
+            output_file = os.path.join(
+                Config.REQUIREMENTS_DIR,
+                f"extracted_requirements_{timestamp}.txt"
+            )
+
+        with open(output_file, "w", encoding="utf-8") as f:
             f.write(requirements)
-        
+
         return output_file
-
-
-
-
-
-
-
-

@@ -1,153 +1,213 @@
 """
 Agent 3: Execution Agent
-Executes BDD tests using behave framework
+
+ROLE:
+- Execute BDD tests using the Behave framework
+- Support API & WEB (Playwright)
+- Collect raw execution results ONLY
 """
+
 import os
 import subprocess
 import json
+import time
 from datetime import datetime
-from config import Config
+from config import Config, ProjectType, ExecutionMode
+
 
 class ExecutionAgent:
-    """Agent that executes BDD tests"""
-    
+    """Executes BDD tests deterministically"""
+
     def __init__(self):
         Config.ensure_directories()
         self.reports_dir = Config.REPORTS_DIR
-    
-    def execute_tests(self, feature_file: str = None, tags: list = None, format_type: str = "json") -> dict:
-        """
-        Execute BDD tests using behave
-        
-        Args:
-            feature_file: Specific feature file to run (None for all)
-            tags: List of tags to filter scenarios
-            format_type: Output format (json, html, allure)
-            
-        Returns:
-            Dictionary with execution results
-        """
-        # Build behave command
-        base_dir = Config.BASE_DIR
-        cmd = ["behave", "--no-capture"]
-        
-        # Add feature file if specified
+        self.base_dir = Config.BASE_DIR
+
+    # ------------------------------------------------------------------
+    def execute_tests(
+        self,
+        feature_file: str = None,
+        tags: list = None,
+        project_type: str = ProjectType.API
+    ) -> dict:
+
+        start_time = time.time()
+
+        # --------------------------------------------------
+        # CRITICAL: Set execution mode to PROJECT for real test execution
+        # This ensures environment.py creates the browser/page context
+        # --------------------------------------------------
+        Config.set_execution_mode(ExecutionMode.PROJECT)
+        # Also set in environment for subprocess
+        os.environ["BDD_EXECUTION_MODE"] = ExecutionMode.PROJECT
+
+        # --------------------------------------------------
+        # Build Behave command
+        # --------------------------------------------------
+        cmd = ["behave", "--no-capture", "--no-capture-stderr"]
+
+        # Feature selection
         if feature_file:
-            if not os.path.isabs(feature_file):
-                feature_file = os.path.join(Config.FEATURES_DIR, feature_file)
-            cmd.append(feature_file)
+            feature_path = (
+                feature_file
+                if os.path.isabs(feature_file)
+                else os.path.join(Config.FEATURES_DIR, feature_file)
+            )
+            cmd.append(feature_path)
         else:
             cmd.append(Config.FEATURES_DIR)
-        
-        # Add tags if specified
-        if tags:
-            tag_args = " and ".join([f"@{tag}" for tag in tags])
-            cmd.extend(["--tags", tag_args])
 
-        # Inject base_url into behave userdata if configured.
-        # This allows any API project to define its base URL via environment
-        # (BASE_URL or BEHAVE_USERDATA_BASE_URL) and have it available as
-        # context.config.userdata['base_url'] in step definitions.
-        base_url = os.getenv("BEHAVE_USERDATA_BASE_URL") or os.getenv("BASE_URL", "")
+        # Tags
+        if tags:
+            tag_expr = " and ".join(f"@{tag}" for tag in tags)
+            cmd.extend(["--tags", tag_expr])
+
+        # base_url injection
+        base_url = (
+            os.getenv("BEHAVE_USERDATA_BASE_URL")
+            or os.getenv("BASE_URL")
+        )
         if base_url:
             cmd.extend(["-D", f"base_url={base_url}"])
-        
-        # Add JSON formatter for parsing (behave has built-in json formatter)
+
+        # WEB guard
+        if project_type == ProjectType.WEB:
+            cmd.extend(["-D", "ui=true"])
+
+        # Reporting
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        json_report = os.path.join(self.reports_dir, f"execution_report_{timestamp}.json")
+        json_report = os.path.join(
+            self.reports_dir,
+            f"execution_report_{timestamp}.json"
+        )
+
         cmd.extend(["-f", "json.pretty", "-o", json_report])
-        
-        # Note: HTML formatter may require behave-html-formatter plugin
-        # Using pretty format as default, which works out of the box
-        html_report = os.path.join(self.reports_dir, f"execution_report_{timestamp}.txt")
-        
+
+        # --------------------------------------------------
+        # Execute
+        # --------------------------------------------------
         try:
-            # Execute behave
             result = subprocess.run(
                 cmd,
-                cwd=base_dir,
+                cwd=self.base_dir,
                 capture_output=True,
                 text=True,
-                timeout=3600  # 1 hour timeout
+                encoding="utf-8",
+                errors="replace",
+                env={**os.environ, "PYTHONUTF8": "1"},
+                timeout=3600
             )
-            
+
+            duration = round(time.time() - start_time, 2)
+
             # Parse JSON report if it exists
-            execution_results = {
-                "status_code": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "json_report_path": json_report if os.path.exists(json_report) else None,
-                "html_report_path": html_report if os.path.exists(html_report) else None,
-                "console_output": result.stdout,
-                "timestamp": timestamp,
-                "success": result.returncode == 0
-            }
+            detailed_results = []
+            summary = {}
             
-            # Try to load JSON report for detailed results
             if os.path.exists(json_report):
                 try:
-                    with open(json_report, 'r', encoding='utf-8') as f:
-                        execution_results["detailed_results"] = json.load(f)
-                    
-                    # Extract summary statistics
-                    if execution_results["detailed_results"]:
-                        execution_results["summary"] = self._extract_summary(
-                            execution_results["detailed_results"]
-                        )
-                except json.JSONDecodeError:
-                    pass
-            
+                    with open(json_report, "r", encoding="utf-8") as f:
+                        json_data = json.load(f)
+                        detailed_results = json_data if isinstance(json_data, list) else [json_data]
+                        
+                        # Extract summary from JSON
+                        if detailed_results:
+                            feature_data = detailed_results[0]
+                            elements = feature_data.get("elements", [])
+                            
+                            total_scenarios = len([e for e in elements if e.get("type") == "scenario"])
+                            total_steps = sum(len(e.get("steps", [])) for e in elements)
+                            
+                            passed_scenarios = len([e for e in elements if e.get("status") == "passed" and e.get("type") == "scenario"])
+                            failed_scenarios = len([e for e in elements if e.get("status") == "failed" and e.get("type") == "scenario"])
+                            skipped_scenarios = len([e for e in elements if e.get("status") == "skipped" and e.get("type") == "scenario"])
+                            
+                            passed_steps = sum(
+                                1 for e in elements 
+                                for step in e.get("steps", []) 
+                                if step.get("result", {}).get("status") == "passed"
+                            )
+                            failed_steps = sum(
+                                1 for e in elements 
+                                for step in e.get("steps", []) 
+                                if step.get("result", {}).get("status") == "failed"
+                            )
+                            skipped_steps = sum(
+                                1 for e in elements 
+                                for step in e.get("steps", []) 
+                                if step.get("result", {}).get("status") == "skipped"
+                            )
+                            
+                            summary = {
+                                "total_scenarios": total_scenarios,
+                                "passed": passed_scenarios,
+                                "failed": failed_scenarios,
+                                "skipped": skipped_scenarios,
+                                "total_steps": total_steps,
+                                "passed_steps": passed_steps,
+                                "failed_steps": failed_steps,
+                                "skipped_steps": skipped_steps,
+                            }
+                except Exception as e:
+                    # If JSON parsing fails, create basic summary from stdout
+                    summary = {
+                        "total_scenarios": 0,
+                        "passed": 0,
+                        "failed": 0,
+                        "skipped": 0,
+                        "total_steps": 0,
+                        "passed_steps": 0,
+                        "failed_steps": 0,
+                        "skipped_steps": 0,
+                    }
+
+            execution_results = {
+                "command": " ".join(cmd),
+                "working_directory": self.base_dir,
+                "status_code": result.returncode,
+                "success": result.returncode == 0,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "timestamp": timestamp,
+                "duration_seconds": duration,
+                "project_type": project_type,
+                "json_report_path": json_report if os.path.exists(json_report) else None,
+                "detailed_results": detailed_results,
+                "summary": summary,
+            }
+
             return execution_results
-            
+
         except subprocess.TimeoutExpired:
             return {
+                "command": " ".join(cmd),
+                "working_directory": self.base_dir,
                 "status_code": -1,
-                "error": "Test execution timed out",
                 "success": False,
-                "timestamp": timestamp
+                "stdout": "",
+                "stderr": "Test execution timed out after 3600 seconds",
+                "timestamp": timestamp,
+                "duration_seconds": 3600,
+                "project_type": project_type,
+                "json_report_path": None,
+                "detailed_results": [],
+                "summary": {},
             }
         except Exception as e:
             return {
+                "command": " ".join(cmd),
+                "working_directory": self.base_dir,
                 "status_code": -1,
-                "error": str(e),
                 "success": False,
-                "timestamp": timestamp
+                "stdout": "",
+                "stderr": str(e),
+                "timestamp": timestamp,
+                "duration_seconds": round(time.time() - start_time, 2),
+                "project_type": project_type,
+                "json_report_path": None,
+                "detailed_results": [],
+                "summary": {},
             }
-    
-    def _extract_summary(self, json_results: list) -> dict:
-        """Extract summary statistics from JSON results"""
-        summary = {
-            "total_scenarios": 0,
-            "passed": 0,
-            "failed": 0,
-            "skipped": 0,
-            "total_steps": 0,
-            "passed_steps": 0,
-            "failed_steps": 0,
-            "skipped_steps": 0
-        }
-        
-        for feature in json_results:
-            for element in feature.get("elements", []):
-                if element.get("type") == "scenario":
-                    summary["total_scenarios"] += 1
-                    status = element.get("status", "").lower()
-                    if status == "passed":
-                        summary["passed"] += 1
-                    elif status == "failed":
-                        summary["failed"] += 1
-                    else:
-                        summary["skipped"] += 1
-                    
-                    for step in element.get("steps", []):
-                        summary["total_steps"] += 1
-                        step_status = step.get("result", {}).get("status", "").lower()
-                        if step_status == "passed":
-                            summary["passed_steps"] += 1
-                        elif step_status == "failed":
-                            summary["failed_steps"] += 1
-                        else:
-                            summary["skipped_steps"] += 1
-        
-        return summary
+
+
 

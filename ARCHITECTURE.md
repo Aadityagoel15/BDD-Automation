@@ -7,7 +7,11 @@ The BDD Automation AI Agents system uses a pipeline architecture where each agen
 ## Pipeline Flow
 
 ```
-Requirements
+Requirements / project artifacts
+    ↓
+[Optional] Requirements Extraction Agent (from code/docs)
+    ↓
+[Web] Requirements-Aware UI Discovery + UI context + XPath discovery
     ↓
 [Agent 1: Requirements → Feature]
     ↓
@@ -15,9 +19,9 @@ Requirements
     ↓
 [Agent 2: Feature → Step Definitions]
     ↓
-step_definitions.py
+features/steps/*_steps.py
     ↓
-[Agent 3: Execution]
+[Agent 3: Execution (Behave)]
     ↓
 Test Results (JSON)
     ↓
@@ -32,36 +36,61 @@ Defect Reports
 
 ## Agent Details
 
-### 1. Requirements to Feature Agent
-- **Input**: Natural language requirements/user stories
-- **Output**: Gherkin `.feature` file
-- **AI Task**: Convert requirements into structured BDD scenarios
-- **Key Files**: `agents/requirements_to_feature_agent.py`
+1. **Requirements Extraction Agent** (optional)
+   - **Input**: Source code, docs, or user stories
+   - **Output**: Testable requirements text
+   - **Key Files**: `agents/requirements_extraction_agent.py`
 
-### 2. Feature to Step Definition Agent
-- **Input**: `.feature` file (Gherkin)
-- **Output**: Python step definitions file
-- **AI Task**: Generate Python code implementing Gherkin steps
-- **Key Files**: `agents/feature_to_stepdef_agent.py`
+2. **Requirements-Aware UI Discovery Agent** (web)
+   - **Input**: Requirements text + `BASE_URL`
+   - **Output**: Enriched requirements, requirement→UI mapping, stats
+   - **Key Files**: `agents/requirements_aware_ui_discovery_agent.py`
+   - **Note**: Runs Playwright headless; requires reachable site
 
-### 3. Execution Agent
-- **Input**: Feature files and step definitions
-- **Output**: Test execution results (JSON, console output)
-- **AI Task**: None (executes behave framework)
-- **Key Files**: `agents/execution_agent.py`
-- **Dependencies**: behave framework
+3. **Web Discovery Agent** (web)
+   - **Input**: `BASE_URL`
+   - **Output**: Deterministic page model (buttons, inputs, links, text)
+   - **Key Files**: `agents/web_discovery_agent.py`
 
-### 4. Reporting Agent
-- **Input**: Test execution results
-- **Output**: Comprehensive test reports with AI insights
-- **AI Task**: Analyze results and generate insights
-- **Key Files**: `agents/reporting_agent.py`
+4. **UI Context Agent** (web)
+   - **Input**: Requirements + page model
+   - **Output**: Test intent context (no selectors/code)
+   - **Key Files**: `agents/ui_context_agent.py`
 
-### 5. Defect Agent
-- **Input**: Test execution results, test reports
-- **Output**: Defect reports with root cause analysis
-- **AI Task**: Identify defects, analyze failures, suggest fixes
-- **Key Files**: `agents/defect_agent.py`
+5. **XPath Properties Agent** (web)
+   - **Input**: `BASE_URL`
+   - **Output**: `reports/ui_locators.properties` with robust selectors
+   - **Key Files**: `agents/xpath_discovery_agent.py`
+
+6. **Requirements to Feature Agent**
+   - **Input**: Natural language requirements/user stories
+   - **Output**: Gherkin `.feature` file
+   - **AI Task**: Convert requirements into structured BDD scenarios
+   - **Key Files**: `agents/requirements_to_feature_agent.py`
+
+7. **Feature to Step Definition Agent**
+   - **Input**: `.feature` file (Gherkin)
+   - **Output**: Python step definitions file
+   - **AI Task**: Generate Python code implementing Gherkin steps
+   - **Key Files**: `agents/feature_to_stepdef_agent.py`
+
+8. **Execution Agent**
+   - **Input**: Feature files and step definitions
+   - **Output**: Test execution results (JSON, console output)
+   - **AI Task**: None (executes Behave)
+   - **Key Files**: `agents/execution_agent.py`
+
+9. **Reporting Agent**
+   - **Input**: Test execution results
+   - **Output**: Comprehensive test reports with AI insights
+   - **AI Task**: Analyze results and generate insights
+   - **Key Files**: `agents/reporting_agent.py`
+
+10. **Defect Agent**
+    - **Input**: Test execution results, test reports
+    - **Output**: Defect reports with root cause analysis
+    - **AI Task**: Identify defects, analyze failures, suggest fixes
+    - **Key Files**: `agents/defect_agent.py`
 
 ## Core Components
 
@@ -84,10 +113,11 @@ Defect Reports
 
 1. **Requirements** → Stored in `requirements/` or passed directly
 2. **Feature Files** → Generated in `features/` directory
-3. **Step Definitions** → Generated in `step_definitions/` directory
-4. **Execution Results** → Stored in `reports/` as JSON
-5. **Test Reports** → Stored in `reports/` as JSON and TXT
-6. **Defect Reports** → Stored in `reports/` as JSON and TXT
+3. **Step Definitions** → Generated in `features/steps/` directory
+4. **UI Locators (web)** → Generated in `reports/ui_locators.properties`
+5. **Execution Results** → Stored in `reports/` as JSON
+6. **Test Reports** → Stored in `reports/` as JSON and TXT
+7. **Defect Reports** → Stored in `reports/` as JSON and TXT
 
 ## Technology Stack
 

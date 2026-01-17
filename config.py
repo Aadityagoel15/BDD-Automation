@@ -1,17 +1,17 @@
 """
 Configuration settings for BDD Automation AI Agents
+(SINGLE SOURCE OF TRUTH – RUNTIME + SUBPROCESS SAFE)
 """
+
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
 # ------------------------------------------------------------------
 # Project Type
 # ------------------------------------------------------------------
 class ProjectType:
-    """Supported project types"""
     API = "api"
     WEB = "web"
     MOBILE = "mobile"
@@ -21,42 +21,39 @@ class ProjectType:
 
 
 # ------------------------------------------------------------------
-# Execution Mode (🔥 KEY ADDITION)
+# Execution Mode
 # ------------------------------------------------------------------
 class ExecutionMode:
     """
-    FRAMEWORK  → building the framework (no real execution)
-    PROJECT    → executing against a real system
+    FRAMEWORK → generation, analysis, discovery (NO REAL EXECUTION)
+    PROJECT   → real execution (browser / API)
     """
     FRAMEWORK = "framework"
     PROJECT = "project"
 
 
 class Config:
-    """Configuration class for BDD Automation"""
+    """Runtime-safe + subprocess-safe configuration"""
 
     # ------------------------------------------------------------------
-    # Groq API Configuration
+    # LLM / Groq
     # ------------------------------------------------------------------
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+
+    TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.7))
+    MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", 4096))
 
     # ------------------------------------------------------------------
-    # Execution Mode (DEFAULT = FRAMEWORK)
+    # 🔒 RUNTIME STATE (IN-MEMORY CACHE)
     # ------------------------------------------------------------------
-    EXECUTION_MODE = os.getenv(
-        "EXECUTION_MODE",
-        ExecutionMode.FRAMEWORK
-    ).lower()
+    _PROJECT_TYPE = ProjectType.UNKNOWN
+    _EXECUTION_MODE = ExecutionMode.PROJECT
 
-    # ------------------------------------------------------------------
-    # Project-level Configuration (optional overrides)
-    # ------------------------------------------------------------------
-    PROJECT_TYPE = os.getenv("PROJECT_TYPE", "").lower()
     BASE_URL = os.getenv("BASE_URL", "")
 
     # ------------------------------------------------------------------
-    # Project directories
+    # Directories
     # ------------------------------------------------------------------
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     FEATURES_DIR = os.path.join(BASE_DIR, "features")
@@ -65,17 +62,10 @@ class Config:
     REQUIREMENTS_DIR = os.path.join(BASE_DIR, "requirements")
 
     # ------------------------------------------------------------------
-    # Agent / LLM settings
-    # ------------------------------------------------------------------
-    TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.7))
-    MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", 4096))
-
-    # ------------------------------------------------------------------
-    # Helper methods
+    # Directory bootstrap
     # ------------------------------------------------------------------
     @classmethod
     def ensure_directories(cls):
-        """Create necessary directories if they don't exist"""
         for directory in (
             cls.FEATURES_DIR,
             cls.STEP_DEFINITIONS_DIR,
@@ -84,24 +74,93 @@ class Config:
         ):
             os.makedirs(directory, exist_ok=True)
 
+    # ------------------------------------------------------------------
+    # ✅ PROJECT TYPE (RUNTIME + SUBPROCESS SAFE)
+    # ------------------------------------------------------------------
     @classmethod
-    def has_explicit_project_type(cls) -> bool:
-        return cls.PROJECT_TYPE in {
+    def set_project_type(cls, project_type: str):
+        project_type = (project_type or "").lower()
+
+        resolved = (
+            project_type
+            if project_type in {
+                ProjectType.API,
+                ProjectType.WEB,
+                ProjectType.MOBILE,
+                ProjectType.DATA,
+                ProjectType.BACKEND,
+            }
+            else ProjectType.UNKNOWN
+        )
+
+        cls._PROJECT_TYPE = resolved
+
+        # 🔥 Persist for Behave subprocess
+        os.environ["BDD_PROJECT_TYPE"] = resolved
+
+    @classmethod
+    def get_project_type(cls) -> str:
+        """
+        Priority:
+        1. In-memory runtime state
+        2. Environment variable (subprocess-safe)
+        3. UNKNOWN fallback
+        """
+
+        if cls._PROJECT_TYPE != ProjectType.UNKNOWN:
+            return cls._PROJECT_TYPE
+
+        env_type = os.getenv("BDD_PROJECT_TYPE", "").lower()
+        if env_type in {
             ProjectType.API,
             ProjectType.WEB,
             ProjectType.MOBILE,
             ProjectType.DATA,
             ProjectType.BACKEND,
-        }
+        }:
+            cls._PROJECT_TYPE = env_type
+            return env_type
+
+        return ProjectType.UNKNOWN
+
+    # ------------------------------------------------------------------
+    # ✅ EXECUTION MODE (RUNTIME + SUBPROCESS SAFE)
+    # ------------------------------------------------------------------
+    @classmethod
+    def set_execution_mode(cls, mode: str):
+        resolved = (
+            mode
+            if mode in (ExecutionMode.FRAMEWORK, ExecutionMode.PROJECT)
+            else ExecutionMode.FRAMEWORK
+        )
+
+        cls._EXECUTION_MODE = resolved
+
+        # Optional persistence (useful for debugging / CI)
+        os.environ["BDD_EXECUTION_MODE"] = resolved
 
     @classmethod
-    def get_project_type(cls) -> str:
-        return cls.PROJECT_TYPE if cls.has_explicit_project_type() else ProjectType.UNKNOWN
+    def get_execution_mode(cls) -> str:
+        if cls._EXECUTION_MODE:
+            return cls._EXECUTION_MODE
+
+        return os.getenv(
+            "BDD_EXECUTION_MODE", ExecutionMode.FRAMEWORK
+        )
 
     @classmethod
     def is_framework_mode(cls) -> bool:
-        return cls.EXECUTION_MODE == ExecutionMode.FRAMEWORK
+        return cls.get_execution_mode() == ExecutionMode.FRAMEWORK
 
     @classmethod
     def is_project_mode(cls) -> bool:
-        return cls.EXECUTION_MODE == ExecutionMode.PROJECT
+        return cls.get_execution_mode() == ExecutionMode.PROJECT
+
+    # ------------------------------------------------------------------
+    # Import utility constants for backward compatibility
+    # ------------------------------------------------------------------
+    @staticmethod
+    def get_timeouts():
+        """Get timeout constants - delegates to utils.constants"""
+        from utils.constants import Timeouts
+        return Timeouts

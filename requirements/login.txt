@@ -1,0 +1,10 @@
+Navigate to the URL https://www.saucedemo.com/
+Login with the valid Creds as User name "standard_user" and Password as "secret_sauce"
+Click on "Add to Cart" button for the product "Sauce Labs Backpack"
+Click on "Shopping Cart" button
+Click on "Checkout" button
+Enter your Information - first name as "Aaditya" , last Name as "Goel" and PIN code as "201301"
+Click on "Continue" button
+Click on "Finish" button
+Verify that Order has been placed with the text shown on UI as "Thank you for your order!"
+Navigate back to Home page by clicking on "Back Home" button

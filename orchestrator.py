@@ -1,10 +1,14 @@
+print("=== ORCHESTRATOR MODULE LOADED ===")
+
 """
 Main Orchestrator for BDD Automation AI Agents
-Coordinates all agents in the BDD automation pipeline
+(Coordinated, lifecycle-safe, execution-correct)
 """
+
 import os
 import sys
 import yaml
+import traceback
 
 from agents.requirements_to_feature_agent import RequirementsToFeatureAgent
 from agents.feature_to_stepdef_agent import FeatureToStepDefAgent
@@ -12,10 +16,14 @@ from agents.execution_agent import ExecutionAgent
 from agents.reporting_agent import ReportingAgent
 from agents.defect_agent import DefectAgent
 from agents.requirements_extraction_agent import RequirementsExtractionAgent
+from agents.web_discovery_agent import WebDiscoveryAgent
+from agents.ui_context_agent import UIContextAgent
+from agents.xpath_discovery_agent import XPathPropertiesAgent
+from agents.requirements_aware_ui_discovery_agent import RequirementsAwareUIDiscoveryAgent
 
 from project_type_detector import detect_project_type
-from config import Config, ProjectType
-from preflight import run_preflight, PreflightError
+from config import Config, ProjectType, ExecutionMode
+from preflight import run_preflight
 
 
 # ------------------------------------------------------------------
@@ -28,17 +36,31 @@ def load_bdd_config() -> dict:
         return yaml.safe_load(f) or {}
 
 
+# ------------------------------------------------------------------
+# ORCHESTRATOR
+# ------------------------------------------------------------------
 class BDDAutomationOrchestrator:
     """Main orchestrator that coordinates all BDD automation agents"""
 
     def __init__(self):
         Config.ensure_directories()
+
         self.extraction_agent = RequirementsExtractionAgent()
         self.requirements_agent = RequirementsToFeatureAgent()
         self.stepdef_agent = FeatureToStepDefAgent()
         self.execution_agent = ExecutionAgent()
         self.reporting_agent = ReportingAgent()
         self.defect_agent = DefectAgent()
+
+        # UI intelligence
+        self.web_discovery_agent = WebDiscoveryAgent()
+        self.ui_context_agent = UIContextAgent()
+
+        # XPath discovery
+        self.xpath_agent = XPathPropertiesAgent()
+        
+        # Requirements-aware UI discovery (NEW: discovers actual UI elements and maps to requirements)
+        self.requirements_aware_discovery = RequirementsAwareUIDiscoveryAgent(headless=True)
 
     # ------------------------------------------------------------------
     # FULL PIPELINE
@@ -51,6 +73,11 @@ class BDDAutomationOrchestrator:
         }
 
         try:
+            # =======================================================
+            # 🔒 FRAMEWORK MODE (GENERATION ONLY)
+            # =======================================================
+            Config.set_execution_mode(ExecutionMode.FRAMEWORK)
+
             # -------------------------------------------------------
             # LOAD CONFIG
             # -------------------------------------------------------
@@ -58,14 +85,11 @@ class BDDAutomationOrchestrator:
             project_cfg = bdd_config.get("project", {})
 
             # -------------------------------------------------------
-            # PROJECT TYPE RESOLUTION (CORRECT PRIORITY)
-            # 1. bdd.config.yaml
-            # 2. .env
-            # 3. Auto-detection
+            # PROJECT TYPE RESOLUTION
             # -------------------------------------------------------
             if project_cfg.get("type"):
                 project_type = project_cfg["type"]
-            elif Config.has_explicit_project_type():
+            elif Config.get_project_type() != ProjectType.UNKNOWN:
                 project_type = Config.get_project_type()
             else:
                 project_type = detect_project_type(
@@ -73,24 +97,96 @@ class BDDAutomationOrchestrator:
                     requirements=requirements
                 )
 
+            # 🔥 SINGLE SOURCE OF TRUTH
+            Config.set_project_type(project_type)
+
+            # 🔥 CRITICAL FIX: Persist for Behave subprocess
+            os.environ["BDD_PROJECT_TYPE"] = project_type
+
             print(f"[INFO] Project type resolved as: {project_type}")
             results["project_type"] = project_type
 
             # -------------------------------------------------------
-            # PREFLIGHT VALIDATION
+            # PREFLIGHT
             # -------------------------------------------------------
-            try:
-                run_preflight(project_type, bdd_config)
-                print("[OK] Preflight validation passed")
-            except PreflightError as e:
-                raise RuntimeError(f"Preflight failed:\n{e}")
+            run_preflight(project_type, bdd_config)
+            print("[OK] Preflight validation passed")
 
             # -------------------------------------------------------
-            # INJECT BASE_URL INTO BEHAVE (API ONLY)
+            # BASE_URL
             # -------------------------------------------------------
-            base_url = project_cfg.get("base_url")
+            base_url = project_cfg.get("base_url") or Config.BASE_URL
             if base_url:
                 os.environ["BEHAVE_USERDATA_BASE_URL"] = base_url
+
+            # -------------------------------------------------------
+            # WEB-SPECIFIC PREPARATION (FRAMEWORK MODE ONLY)
+            # -------------------------------------------------------
+            # CRITICAL: Save original requirements BEFORE UI context modification
+            # This ensures credential/URL extraction works from original text
+            original_requirements = requirements
+            
+            if project_type == ProjectType.WEB:
+                if not base_url:
+                    raise RuntimeError("base_url is required for WEB projects")
+
+                # 🔥 NEW: Requirements-aware UI discovery
+                # This discovers actual UI elements from the website and maps them to requirements
+                print("[INFO] Discovering actual UI elements and mapping to requirements...")
+                ui_discovery_result = None  # Initialize to handle exception case
+                try:
+                    ui_discovery_result = self.requirements_aware_discovery.discover_and_map(
+                        requirements=original_requirements,
+                        base_url=base_url
+                    )
+                    enriched_requirements = ui_discovery_result.get('enriched_requirements', original_requirements)
+                    
+                    print(f"[INFO] UI Discovery Stats:")
+                    print(f"  - Buttons found: {ui_discovery_result['discovery_stats']['buttons_found']}")
+                    print(f"  - Inputs found: {ui_discovery_result['discovery_stats']['inputs_found']}")
+                    print(f"  - Links found: {ui_discovery_result['discovery_stats']['links_found']}")
+                    print(f"  - Terms mapped: {ui_discovery_result['discovery_stats']['terms_mapped']}")
+                    
+                    # Show mapping
+                    mapping = ui_discovery_result.get('requirements_mapping', {})
+                    if mapping:
+                        print(f"[INFO] Requirement -> UI Element Mapping:")
+                        for req_term, ui_name in list(mapping.items())[:10]:  # Show first 10
+                            if req_term != ui_name:
+                                print(f"  '{req_term}' -> '{ui_name}'")
+                    
+                    # Use enriched requirements (with actual UI element names)
+                    requirements = enriched_requirements
+                    # Extract UI semantics for feature generation
+                    ui_semantics = ui_discovery_result.get('ui_semantics', {})
+                    results["stages"]["requirements_aware_ui_discovery"] = {
+                        "status": "success",
+                        "mapping": mapping,
+                        "stats": ui_discovery_result['discovery_stats']
+                    }
+                except Exception as e:
+                    print(f"[WARNING] Requirements-aware UI discovery failed: {e}")
+                    print("[INFO] Continuing with original requirements...")
+                    # Continue with original requirements if discovery fails
+                    requirements = original_requirements
+                    ui_discovery_result = None
+                    ui_semantics = None
+
+                # XPath discovery (NO REAL EXECUTION)
+                xpath_file = self._run_xpath_discovery(base_url)
+                results["stages"]["xpath_discovery"] = {
+                    "status": "success",
+                    "file": xpath_file
+                }
+
+                # UI intent generation (NO REAL EXECUTION)
+                # Note: This modifies requirements but we keep original for extraction
+                modified_requirements = self._build_ui_test_intent(
+                    requirements=requirements,  # Use enriched requirements if available
+                    base_url=base_url
+                )
+                # Use modified requirements for feature generation but extract from original
+                requirements = modified_requirements
 
             # -------------------------------------------------------
             # STAGE 1: Requirements → Feature
@@ -99,9 +195,14 @@ class BDDAutomationOrchestrator:
             print("STAGE 1: Converting Requirements to Feature File")
             print("=" * 80)
 
+            # CRITICAL: Extract data from ORIGINAL requirements (before UI context modification)
+            # This ensures credentials and URLs are extracted correctly
             feature_content = self.requirements_agent.convert_requirements_to_feature(
-                requirements,
-                feature_name
+                requirements=requirements,  # Modified requirements for context      
+                feature_name=feature_name,
+                project_type=project_type,
+                original_requirements=original_requirements if project_type == ProjectType.WEB else None,
+                ui_discovery_result=ui_discovery_result if project_type == ProjectType.WEB else None
             )
 
             feature_file_path = self.requirements_agent.save_feature_file(
@@ -114,21 +215,37 @@ class BDDAutomationOrchestrator:
                 "feature_file": feature_file_path
             }
 
-            print(f"[OK] Feature file created: {feature_file_path}")
-
             # -------------------------------------------------------
             # STAGE 2: Feature → Step Definitions
             # -------------------------------------------------------
-            print("\n" + "=" * 80)
+            print("=" * 80)
             print("STAGE 2: Generating Step Definitions")
             print("=" * 80)
+
+            # Clean up old step definition files with same prefix to avoid AmbiguousStep errors
+            feature_basename_prefix = os.path.basename(feature_file_path).replace(".feature", "").rsplit("_", 2)[0] if "_" in os.path.basename(feature_file_path) else os.path.basename(feature_file_path).replace(".feature", "")
+            if feature_basename_prefix:
+                step_def_dir = os.path.join(Config.STEP_DEFINITIONS_DIR or "features/steps", "")
+                if os.path.exists(step_def_dir):
+                    for old_file in os.listdir(step_def_dir):
+                        if old_file.startswith(feature_basename_prefix + "_") and old_file.endswith("_steps.py"):
+                            old_path = os.path.join(step_def_dir, old_file)
+                            try:
+                                if old_file != os.path.basename(feature_file_path).replace(".feature", "_steps.py"):
+                                    os.remove(old_path)
+                                    print(f"[INFO] Removed old step definition file: {old_file}")
+                            except Exception as e:
+                                print(f"[WARN] Could not remove old step definition file {old_file}: {e}")
 
             step_def_content = self.stepdef_agent.generate_step_definitions(
                 feature_file_path,
                 project_type=project_type
             )
 
-            feature_basename = os.path.basename(feature_file_path).replace(".feature", "")
+            feature_basename = os.path.basename(
+                feature_file_path
+            ).replace(".feature", "")
+
             step_def_file_path = self.stepdef_agent.save_step_definitions(
                 step_def_content,
                 feature_basename
@@ -139,113 +256,74 @@ class BDDAutomationOrchestrator:
                 "step_def_file": step_def_file_path
             }
 
-            print(f"[OK] Step definitions created: {step_def_file_path}")
+            # =======================================================
+            # 🚀 PROJECT MODE (REAL EXECUTION)
+            # =======================================================
+            Config.set_execution_mode(ExecutionMode.PROJECT)
 
             # -------------------------------------------------------
-            # STAGE 3: Execute Tests
+            # STAGE 3: Execution
             # -------------------------------------------------------
-            print("\n" + "=" * 80)
-            print("STAGE 3: Executing Tests")
-            print("=" * 80)
+            execution_results = self.execution_agent.execute_tests(
+                feature_file=feature_file_path,
+                project_type=project_type
+            )
 
-            execution_results = self.execution_agent.execute_tests(feature_file_path)
             results["stages"]["execution"] = execution_results
 
             # -------------------------------------------------------
             # STAGE 4: Reporting
             # -------------------------------------------------------
-            print("\n" + "=" * 80)
-            print("STAGE 4: Generating Reports")
-            print("=" * 80)
+            test_report = self.reporting_agent.generate_report(
+                execution_results
+            )
 
-            test_report = self.reporting_agent.generate_report(execution_results)
             results["stages"]["reporting"] = test_report
 
             # -------------------------------------------------------
-            # STAGE 5: Defect Identification
+            # STAGE 5: Defects
             # -------------------------------------------------------
-            print("\n" + "=" * 80)
-            print("STAGE 5: Identifying Defects")
-            print("=" * 80)
-
             defects_result = self.defect_agent.identify_defects(
                 execution_results,
                 test_report
             )
 
             results["stages"]["defects"] = defects_result
-
             results["pipeline_status"] = "completed"
+
             print("\nPIPELINE COMPLETED SUCCESSFULLY")
 
         except Exception as e:
             results["pipeline_status"] = "failed"
             results["error"] = str(e)
-            import traceback
             traceback.print_exc()
 
         return results
 
     # ------------------------------------------------------------------
-    # EXTRACT + GENERATE PIPELINE
+    # INTERNAL HELPERS (FRAMEWORK SAFE)
     # ------------------------------------------------------------------
-    def run_extract_and_generate_pipeline(
-        self,
-        project_path: str,
-        feature_name: str = None,
-        file_extensions: list = None
-    ) -> dict:
+    def _build_ui_test_intent(self, requirements: str, base_url: str) -> str:
+        print("[INFO] Discovering UI structure (FRAMEWORK MODE)")
+        page_model = self.web_discovery_agent.discover(base_url)
+        return self.ui_context_agent.build_context(
+            requirements=requirements,
+            page_model=page_model
+        )
 
-        results = {
-            "pipeline_status": "started",
-            "stages": {}
-        }
-
-        try:
-            extraction_result = self.extraction_agent.extract_from_project_directory(
-                project_path,
-                file_extensions
-            )
-
-            combined_requirements = extraction_result.get("combined_requirements", "")
-            if not combined_requirements:
-                raise ValueError("No requirements extracted from project")
-
-            project_type = detect_project_type(
-                project_path=project_path,
-                requirements=combined_requirements
-            )
-
-            feature_content = self.requirements_agent.convert_requirements_to_feature(
-                combined_requirements,
-                feature_name or os.path.basename(project_path)
-            )
-
-            feature_file_path = self.requirements_agent.save_feature_file(
-                feature_content,
-                feature_name or "project_feature"
-            )
-
-            results["stages"]["requirements_to_feature"] = {
-                "status": "success",
-                "feature_file": feature_file_path
-            }
-
-            results["pipeline_status"] = "completed"
-
-        except Exception as e:
-            results["pipeline_status"] = "failed"
-            results["error"] = str(e)
-
-        return results
+    def _run_xpath_discovery(self, base_url: str) -> str:
+        output_file = os.path.join(
+            Config.REPORTS_DIR,
+            "ui_locators.properties"
+        )
+        print("[INFO] Running XPath discovery (FRAMEWORK MODE)")
+        self.xpath_agent.generate(url=base_url, output_file=output_file)
+        return output_file
 
 
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------------
 # CLI ENTRY POINT
-# ----------------------------------------------------------------------
-# ----------------------------------------------------------------------
-# CLI ENTRY POINT
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------------
 def main():
     import argparse
 
@@ -253,61 +331,29 @@ def main():
         description="BDD Automation AI Agents Orchestrator"
     )
 
-    parser.add_argument("--requirements", type=str)
+    parser.add_argument("--requirements", type=str, required=True)
     parser.add_argument("--feature-name", type=str)
-    parser.add_argument("--project-path", type=str)
-    parser.add_argument(
-        "--stage",
-        choices=["full", "extract_and_generate"],
-        default="full"
-    )
 
     args = parser.parse_args()
     orchestrator = BDDAutomationOrchestrator()
 
-    if args.stage == "extract_and_generate":
-        if not args.project_path:
-            sys.exit("Error: --project-path is required")
+    req_input = args.requirements
 
-        results = orchestrator.run_extract_and_generate_pipeline(
-            project_path=args.project_path,
-            feature_name=args.feature_name
-        )
-
+    if os.path.isfile(req_input):
+        with open(req_input, "r", encoding="utf-8") as f:
+            requirements_text = f.read()
     else:
-        if not args.requirements:
-            sys.exit("Error: --requirements is required")
+        requirements_text = req_input
 
-        # --------------------------------------------------
-        # SMART REQUIREMENTS RESOLUTION
-        # --------------------------------------------------
-        req_input = args.requirements
-        req_path = None
-
-        # Case 1: Full / relative path provided
-        if os.path.isfile(req_input):
-            req_path = req_input
-
-        # Case 2: File exists inside requirements/ folder
-        else:
-            candidate = os.path.join(Config.REQUIREMENTS_DIR, req_input)
-            if os.path.isfile(candidate):
-                req_path = candidate
-
-        # Load requirements
-        if req_path:
-            print(f"[INFO] Loading requirements from file: {req_path}")
-            with open(req_path, "r", encoding="utf-8") as f:
-                requirements_text = f.read()
-        else:
-            print("[INFO] Using inline requirements text")
-            requirements_text = req_input
-
-        results = orchestrator.run_full_pipeline(
-            requirements=requirements_text,
-            feature_name=args.feature_name
-        )
+    results = orchestrator.run_full_pipeline(
+        requirements=requirements_text,
+        feature_name=args.feature_name
+    )
 
     print("\nRESULTS SUMMARY")
     print("=" * 80)
     print(results)
+
+
+if __name__ == "__main__":
+    main()

@@ -246,7 +246,7 @@ def main():
     
     print("=" * 80)
     
-        if all_passed:
+    if all_passed:
         print(f"{PASS} ALL TESTS PASSED - System is ready to use!")
         print("\nNext steps:")
         print("1. Run: python orchestrator.py --requirements 'Your requirements here' --feature-name test")

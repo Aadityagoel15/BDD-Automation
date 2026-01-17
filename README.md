@@ -1,23 +1,40 @@
-# BDD Automation AI Agents
+# BDD Automation Framework
 
-An intelligent BDD (Behavior-Driven Development) automation system powered by Groq AI. This system automates the complete BDD workflow from requirements to defect identification using specialized AI agents.
+A **general-purpose** BDD (Behavior-Driven Development) automation framework powered by Groq AI. This framework automatically generates and executes test automation for **any website or API** - no coding required!
+
+## 🎯 What Can You Test?
+
+- ✅ **Web Applications** - Any website (login flows, e-commerce, dashboards, etc.)
+- ✅ **REST APIs** - Any API endpoint (CRUD operations, authentication, etc.)
+- ✅ **Mobile Web Apps** - Responsive web applications
+- ✅ **Backend Services** - Microservices, databases, data pipelines
+- ✅ **Custom Applications** - Any application with UI or API
+
+**No hardcoding required** - Works with any URL, any credentials, any workflow!
+
+**Locators are site-agnostic.** The framework first uses discovered selectors, then any overrides in `reports/ui_locators.properties`, then heuristic patterns (camelCase/kebab/nospace/underscore), and finally visible text. For new sites, add guaranteed selectors for critical fields/buttons to `reports/ui_locators.properties` to avoid misses.
 
 ## Overview
 
-The system consists of 5 specialized AI agents that work together in a pipeline:
+The system runs a coordinated pipeline:
 
-1. **Requirements to Feature Agent**: Converts requirements/user stories into Gherkin `.feature` files
-2. **Feature to Step Definition Agent**: Generates Python step definitions from feature files
-3. **Execution Agent**: Executes BDD tests using the behave framework
-4. **Reporting Agent**: Generates comprehensive test execution reports with AI-powered insights
-5. **Defect Agent**: Analyzes failures and creates detailed defect reports
+1. **(Optional) Requirements Extraction Agent**: Pulls testable behaviors from code/docs
+2. **Requirements-Aware UI Discovery (web)**: Discovers live UI elements and enriches requirements
+3. **Requirements to Feature Agent**: Converts requirements/user stories into Gherkin `.feature` files
+4. **Feature to Step Definition Agent**: Generates Python step definitions from feature files
+5. **Execution Agent**: Executes BDD tests using the behave framework
+6. **Reporting Agent**: Generates comprehensive test execution reports with AI-powered insights
+7. **Defect Agent**: Analyzes failures and creates detailed defect reports
+
+For web projects, set `BASE_URL` so discovery and execution can reach the application.
 
 ## Features
 
-- 🤖 AI-powered requirement analysis and feature file generation
+- 🤖 Requirement extraction and feature file generation
+- 🔎 Live UI discovery + requirements enrichment for web apps
 - 📝 Automatic step definition generation
 - 🚀 Automated test execution
-- 📊 Comprehensive reporting with AI insights
+- 📊 Reporting with AI insights
 - 🐛 Intelligent defect identification and analysis
 - 🔄 Complete pipeline automation
 
@@ -26,39 +43,61 @@ The system consists of 5 specialized AI agents that work together in a pipeline:
 - Python 3.8 or higher
 - Groq API key ([Get one here](https://console.groq.com/))
 
-## Installation
+## 🚀 Quick Start
 
-1. Clone or navigate to the project directory:
-```bash
-cd "C:\Users\AADITYA\Desktop\BDD Automation"
-```
+**New to the framework?** See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed setup instructions.
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+### Installation
 
-3. Set up environment variables:
-   - Copy `.env.example` to `.env`
-   - Add your Groq API key:
+1. **Clone or copy the project:**
+   ```bash
+   git clone <repository-url>
+   cd "BDD Automation"
    ```
+
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Configure environment (set `BASE_URL` for web runs):**
+   ```bash
+   # Copy template
+   cp env_template.txt .env
+   
+   # Edit .env and add your Groq API key
    GROQ_API_KEY=your_groq_api_key_here
+   BASE_URL=https://your-application-url.com  # Required for web discovery/execution
+   ```
+
+4. **Verify setup:**
+   ```bash
+   python test_system.py
+   ```
+
+5. **Run your first test:**
+   ```bash
+   python orchestrator.py --requirements "Navigate to https://your-app.com and click Login" --feature-name my_test
    ```
 
 ## Project Structure
 
 ```
-BDD Automation/
+BDD-Automation/
 ├── agents/                          # AI agent modules
-│   ├── __init__.py
 │   ├── requirements_to_feature_agent.py
 │   ├── feature_to_stepdef_agent.py
 │   ├── execution_agent.py
 │   ├── reporting_agent.py
-│   └── defect_agent.py
+│   ├── defect_agent.py
+│   ├── requirements_extraction_agent.py
+│   ├── web_discovery_agent.py
+│   ├── ui_context_agent.py
+│   ├── xpath_discovery_agent.py
+│   └── requirements_aware_ui_discovery_agent.py
 ├── features/                        # Generated .feature files
-├── step_definitions/                # Generated step definitions
-├── reports/                         # Test reports and defect logs
+│   └── steps/                       # Generated step definitions
+├── reports/                         # Test reports, UI locators, summaries
 ├── requirements/                    # Input requirements files
 ├── config.py                        # Configuration settings
 ├── groq_client.py                   # Groq API client
@@ -69,19 +108,59 @@ BDD Automation/
 
 ## Usage
 
-### Full Pipeline (All Stages)
+## 📖 Usage Examples
 
-Run the complete pipeline from requirements to defect identification:
+### Web Application Testing
 
-```bash
-python orchestrator.py --requirements "As a user, I want to login so that I can access my account" --feature-name login_feature
-```
-
-Or use a requirements file:
+**Test any website workflow:**
 
 ```bash
-python orchestrator.py --requirements requirements/user_story.txt --feature-name login_feature
+python orchestrator.py --requirements "Navigate to https://example.com, click Products menu, search for 'laptop', add to cart" --feature-name web_test
 ```
+
+**Using a requirements file:**
+
+Create `requirements/my_test.txt`:
+```
+Navigate to the URL https://your-app.com/
+Login with username "testuser" and password "testpass"
+Click on the "Dashboard" button
+Verify dashboard page is displayed
+```
+
+Run:
+```bash
+python orchestrator.py --requirements requirements/my_test.txt --feature-name my_test
+```
+
+### API Testing
+
+Create `requirements/api_test.txt`:
+```
+Test POST /api/users endpoint
+Request body: {"name": "John", "email": "john@example.com"}
+Verify response status is 201
+Verify response contains "user_id"
+```
+
+Run:
+```bash
+python orchestrator.py --requirements requirements/api_test.txt --feature-name api_test
+```
+
+### E-commerce Flow Example
+
+```
+Navigate to https://shop.example.com
+Add to cart "Wireless Mouse"
+Navigate to Cart Page
+Click on Checkout button
+Enter first name "John", last name "Doe", postal code "12345"
+Click Continue button
+Verify order confirmation
+```
+
+See example requirements in [HOW_TO_RUN.md](HOW_TO_RUN.md#-run-with-your-own-requirements).
 
 ### Individual Stages
 
@@ -136,63 +215,65 @@ defects = agent.identify_defects(execution_results, test_report)
 ### Command Line Options
 
 ```bash
-python orchestrator.py [OPTIONS]
-
-Options:
-  --requirements TEXT    Requirements text or path to requirements file
-  --feature-name TEXT    Name for the feature file
-  --stage TEXT          Pipeline stage to run (requirements_to_feature, 
-                        feature_to_stepdef, execution, reporting, defects, full)
-  --feature-file TEXT   Path to feature file (for stage-specific runs)
+python orchestrator.py --requirements <text-or-file> --feature-name <name>
 ```
 
-## Configuration
+Arguments:
+- `--requirements` (required): Inline text or path to a `.txt` file
+- `--feature-name` (optional): Used for naming generated files
 
-Edit `config.py` to customize:
+## ⚙️ Configuration
 
-- Groq model selection (default: `llama-3.1-70b-versatile`)
-- Temperature for AI responses (default: 0.7)
-- Max tokens (default: 4096)
-- Directory paths
+### Environment Variables (`.env` file)
 
-## Example Workflow
+```env
+# Required
+GROQ_API_KEY=your_groq_api_key_here
 
-1. **Provide Requirements**:
-   ```
-   "As an e-commerce user, I want to add items to my shopping cart 
-   so that I can purchase multiple products at once."
-   ```
+# Application URL (required for web discovery/execution)
+BASE_URL=https://your-application-url.com
 
-2. **AI Agent 1** generates:
-   ```gherkin
-   Feature: Shopping Cart
-     As an e-commerce user
-     I want to add items to my shopping cart
-     So that I can purchase multiple products at once
+# Optional - AI model (default: llama-3.1-8b-instant)
+GROQ_MODEL=llama-3.1-8b-instant
+```
 
-     Scenario: Add single item to cart
-       Given I am on the product page
-       When I click "Add to Cart"
-       Then the item should be added to my cart
-   ```
+### Project Configuration (`bdd.config.yaml`)
 
-3. **AI Agent 2** generates Python step definitions
+```yaml
+project:
+  type: web          # api | web | mobile | data | backend
+  base_url: https://your-application-url.com
+```
 
-4. **AI Agent 3** executes the tests
+**Configuration Priority:**
+1. `.env` file values (API key, BASE_URL, model)
+2. `bdd.config.yaml` project block
+3. Auto-detection from requirements (fallback)
 
-5. **AI Agent 4** generates comprehensive reports
+See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed configuration options.
 
-6. **AI Agent 5** identifies and analyzes any defects
+## 🔄 How It Works
+
+1. **You provide requirements** in plain English (file or command line)
+2. **(Web)** UI discovery enriches requirements with real element names
+3. **AI Agent 1** converts requirements → Gherkin feature files
+4. **AI Agent 2** generates Python step definitions automatically
+5. **AI Agent 3** executes tests using Behave
+6. **AI Agent 4** generates comprehensive test reports with insights
+7. **AI Agent 5** identifies and analyzes defects from failures
+
+**No coding required** - Just write requirements in plain English!
 
 ## Output Files
 
 All outputs are saved in their respective directories:
 
 - **Features**: `features/*.feature`
-- **Step Definitions**: `step_definitions/*_steps.py`
+- **Step Definitions**: `features/steps/*_steps.py`
 - **Execution Reports**: `reports/execution_report_*.json` and `*.html`
 - **Test Reports**: `reports/test_report_*.json` and `test_report_summary_*.txt`
 - **Defect Reports**: `reports/defects_*.json` and `defect_report_*.txt`
+- **UI Locators (web)**: `reports/ui_locators.properties`
 
 ## Testing the System
 
@@ -222,13 +303,19 @@ python orchestrator.py --requirements "As a user, I want to click a button so th
 
 For detailed testing instructions, see [TESTING.md](TESTING.md)
 
-## Troubleshooting
+## ❓ Troubleshooting
 
-1. **Groq API Key Error**: Ensure your `.env` file contains a valid `GROQ_API_KEY`
-2. **Import Errors**: Make sure all dependencies are installed: `pip install -r requirements.txt`
-3. **Behave Not Found**: Install behave: `pip install behave`
-4. **Module Not Found**: Ensure you're running from the project root directory
-5. **Test Script Fails**: Run `python test_system.py` to identify specific issues
+| Issue | Solution |
+|-------|----------|
+| `GROQ_API_KEY not found` | Create `.env` file and add your API key |
+| `BASE_URL is required` | Set `BASE_URL` in `.env` or include URL in requirements |
+| Import errors | Run `pip install -r requirements.txt` |
+| Tests fail to execute | Verify application is running and `BASE_URL` is correct |
+| Playwright errors | Run `pip install playwright && playwright install` |
+
+**Still having issues?** Run `python test_system.py` to diagnose problems.
+
+See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed troubleshooting.
 
 ## Extending the System
 
@@ -252,11 +339,32 @@ class CustomAgent:
 
 Each agent has a `system_prompt` that guides the AI. Modify these in the agent files to customize behavior.
 
-## License
+## 📚 Documentation
+
+- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Complete setup guide for new users
+- **[HOW_TO_RUN.md](HOW_TO_RUN.md)** - Usage and examples
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Pipeline and agent roles
+- **[FILE_STRUCTURE.md](FILE_STRUCTURE.md)** - Required/generated files
+- **[TESTING.md](TESTING.md)** - Ways to verify the system
+
+## 🤝 Contributing
+
+This is a general-purpose framework designed to work with any website or API. 
+
+**Framework Design Principles:**
+- ✅ No hardcoded URLs or credentials
+- ✅ Configuration-driven (no code changes needed)
+- ✅ Works with any domain, any workflow
+- ✅ Supports web, API, mobile, and backend testing
+
+## 📝 License
 
 This project is for internal company use.
 
-## Support
+## 💬 Support
 
-For issues or questions, contact your development team.
+For questions or issues:
+1. Check [SETUP_GUIDE.md](SETUP_GUIDE.md)
+2. Run `python test_system.py` to verify setup
+3. Contact your development team
 

@@ -50,6 +50,8 @@ print(feature)
 
 ### 2. Test Full Pipeline
 
+> For web runs, set `BASE_URL` in `.env` or `bdd.config.yaml` so discovery and Behave can reach the application.
+
 #### Using Command Line
 ```bash
 python orchestrator.py --requirements "As a user, I want to search for products" --feature-name search_test
@@ -67,59 +69,6 @@ results = orchestrator.run_full_pipeline(
 print(results)
 ```
 
-### 3. Test Individual Stages
-
-#### Stage 1: Requirements → Feature
-```python
-from orchestrator import BDDAutomationOrchestrator
-
-orchestrator = BDDAutomationOrchestrator()
-result = orchestrator.run_single_stage(
-    "requirements_to_feature",
-    requirements="As a user, I want to checkout",
-    feature_name="checkout"
-)
-print(result["feature_file"])
-```
-
-#### Stage 2: Feature → Step Definitions
-```python
-result = orchestrator.run_single_stage(
-    "feature_to_stepdef",
-    feature_file="features/checkout.feature"
-)
-print(result["step_def_file"])
-```
-
-#### Stage 3: Execution
-```python
-result = orchestrator.run_single_stage(
-    "execution",
-    feature_file="features/checkout.feature"
-)
-print(result["success"])
-```
-
-#### Stage 4: Reporting
-```python
-execution_results = {...}  # From stage 3
-result = orchestrator.run_single_stage(
-    "reporting",
-    execution_results=execution_results
-)
-print(result["report_path"])
-```
-
-#### Stage 5: Defects
-```python
-result = orchestrator.run_single_stage(
-    "defects",
-    execution_results=execution_results,
-    test_report=report_result
-)
-print(result["defects_found"])
-```
-
 ## Expected Outputs
 
 ### Successful Test Run Should Show:
@@ -131,21 +80,26 @@ print(result["defects_found"])
 
 2. **Step Definition Generation**:
    ```
-   ✓ Step definitions created: step_definitions/login_steps.py
+   ✓ Step definitions created: features/steps/login_steps.py
    ```
 
-3. **Test Execution**:
+3. **(Web) UI Locator Discovery**:
+   ```
+   ✓ UI locators saved: reports/ui_locators.properties
+   ```
+
+4. **Test Execution**:
    ```
    ✓ Tests executed successfully
    ```
 
-4. **Report Generation**:
+5. **Report Generation**:
    ```
    ✓ Report generated: reports/test_report_20240101_120000.json
    ✓ Summary available: reports/test_report_summary_20240101_120000.txt
    ```
 
-5. **Defect Identification**:
+6. **Defect Identification**:
    ```
    ✓ Defects identified: 0
    ```
@@ -188,7 +142,7 @@ pip install behave
 After running tests, check these directories:
 
 - `features/` - Generated feature files
-- `step_definitions/` - Generated step definitions
+- `features/steps/` - Generated step definitions
 - `reports/` - Test reports and execution results
 
 ## Continuous Testing

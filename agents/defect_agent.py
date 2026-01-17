@@ -1,284 +1,340 @@
-"""
-Agent 5: Defect Identification Agent
-Analyzes test failures and identifies/creates defects
-"""
 import os
 import json
 from datetime import datetime
 from groq_client import GroqClient
 from config import Config
 
-class DefectAgent:
-    """Agent that identifies and creates defect reports from test failures"""
-    
-    def __init__(self):
-        self.groq_client = GroqClient()
-        Config.ensure_directories()
-        self.system_prompt = """You are an expert QA analyst specializing in defect identification and reporting.
-Your task is to analyze test failures and create comprehensive defect reports.
 
-Guidelines:
-1. Identify root causes of failures
-2. Categorize defects by severity (Critical, High, Medium, Low)
-3. Provide clear reproduction steps
-4. Include expected vs actual behavior
-5. Suggest potential fixes
-6. Identify patterns across multiple failures
-7. Determine if failures indicate bugs or test issues
-8. Create actionable defect descriptions
+class DefectAgent:
+    """
+    Agent 5: Defect Identification Agent
+
+    ROLE:
+    - Analyze FAILED test executions only
+    - Identify potential defects vs test issues
+    - Produce deterministic, review-ready defect reports
+
+    IMPORTANT:
+    - Facts come ONLY from execution results
+    - LLM is advisory, never authoritative
+    - No defects are created without an actual failed scenario
+    """
+
+    def __init__(self):
+        Config.ensure_directories()
+        self.llm = GroqClient()
+
+        self.system_prompt = """
+You are a Senior Automation Test Engineer with 10+ years of experience in test automation.
+
+YOUR EXPERTISE:
+- Python programming for automation (expert-level)
+- Playwright automation framework (primary tool)
+- Test failure analysis and root cause investigation
+- Defect identification and triage
+- Distinguishing automation script issues from actual product defects
+
+YOUR ROLE AS DEFECT ANALYST:
+- Analyze failed test executions from Playwright automation runs
+- Identify root causes of test failures
+- Distinguish between product defects and test automation issues
+- Provide technical, actionable defect reports
+
+CORE RULES:
+- Use ONLY the provided failure data from test execution
+- Consider Playwright-specific failure patterns (timeouts, element not found, etc.)
+- Do NOT invent steps, screens, or flows not present in execution logs
+- Distinguish product defects from test script issues (selector problems, timing issues, etc.)
+- Keep analysis technical, concise, and focused on automation testing
+- Do NOT speculate beyond evidence from execution results
+- Consider common Playwright automation pitfalls when analyzing failures
+
+Your output must be structured, actionable, and suitable for both developers and QA teams working with Python/Playwright automation.
 """
-    
-    def identify_defects(self, execution_results: dict, test_report: dict = None) -> dict:
+
+    # --------------------------------------------------
+    # 🔒 SAFETY NORMALIZER
+    # --------------------------------------------------
+    def _safe_str(self, value) -> str:
+        if value is None:
+            return "N/A"
+        if isinstance(value, list):
+            return "\n".join(map(str, value))
+        return str(value)
+
+    # --------------------------------------------------
+    def identify_defects(
+        self,
+        execution_results: dict,
+        test_report: dict = None
+    ) -> dict:
         """
-        Identify defects from test execution results
-        
+        Identify defects from execution results.
+
         Args:
-            execution_results: Results from ExecutionAgent
-            test_report: Optional report from ReportingAgent
-            
+            execution_results: Output from ExecutionAgent
+            test_report: Optional reporting agent output
+
         Returns:
-            Dictionary containing identified defects
+            Defect analysis result dictionary
         """
+
         detailed_results = execution_results.get("detailed_results", [])
         failures = self._extract_failures(detailed_results)
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+
+        # ---------------- NO FAILURES ----------------
         if not failures:
-            result = {
-                "defects_found": 0,
-                "defects": [],
-                "timestamp": timestamp,
-                "message": "No failures found - no defects identified",
-                "severity_distribution": {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
-            }
-            
-            # Save defects file even when no defects found
-            defects_path = os.path.join(Config.REPORTS_DIR, f"defects_{timestamp}.json")
-            with open(defects_path, 'w', encoding='utf-8') as f:
-                json.dump(result, f, indent=2)
-            result["defects_file_path"] = defects_path
-            
-            # Generate defect report document
-            report_text = self._generate_defect_report(result)
-            report_path = os.path.join(Config.REPORTS_DIR, f"defect_report_{timestamp}.txt")
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(report_text)
-            result["defect_report_path"] = report_path
-            
+            result = self._no_defects_result(timestamp)
+            self._persist_defect_artifacts(result, timestamp)
             return result
-        
-        # Analyze each failure
-        defects = []
+
+        # ---------------- ANALYZE FAILURES ----------------
+        analyzed = []
         for failure in failures:
             defect = self._analyze_failure(failure)
             if defect:
-                defects.append(defect)
-        
-        # Group and deduplicate defects
-        unique_defects = self._deduplicate_defects(defects)
-        
-        # Generate summary
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                analyzed.append(defect)
+
+        unique_defects = self._deduplicate_defects(analyzed)
+
         result = {
+            "timestamp": timestamp,
             "defects_found": len(unique_defects),
             "defects": unique_defects,
-            "timestamp": timestamp,
-            "severity_distribution": self._calculate_severity_distribution(unique_defects)
+            "severity_distribution": self._calculate_severity_distribution(
+                unique_defects
+            ),
         }
-        
-        # Save defects to file
-        defects_path = os.path.join(Config.REPORTS_DIR, f"defects_{result['timestamp']}.json")
-        with open(defects_path, 'w', encoding='utf-8') as f:
-            json.dump(result, f, indent=2)
-        
-        result["defects_file_path"] = defects_path
-        
-        # Generate defect report document
-        report_text = self._generate_defect_report(result)
-        report_path = os.path.join(Config.REPORTS_DIR, f"defect_report_{result['timestamp']}.txt")
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write(report_text)
-        
-        result["defect_report_path"] = report_path
-        
+
+        self._persist_defect_artifacts(result, timestamp)
         return result
-    
+
+    # --------------------------------------------------
+    def _no_defects_result(self, timestamp: str) -> dict:
+        return {
+            "timestamp": timestamp,
+            "defects_found": 0,
+            "defects": [],
+            "severity_distribution": {
+                "Critical": 0,
+                "High": 0,
+                "Medium": 0,
+                "Low": 0,
+            },
+            "message": "No failed scenarios detected. No defects identified.",
+        }
+
+    # --------------------------------------------------
     def _extract_failures(self, detailed_results: list) -> list:
-        """Extract all failures from detailed results"""
+        """
+        Extract FAILED scenarios only.
+        """
         failures = []
-        
-        for feature in detailed_results:
-            feature_name = feature.get("name", "Unknown")
-            for element in feature.get("elements", []):
-                if element.get("type") == "scenario" and element.get("status", "").lower() == "failed":
-                    failed_steps = [step for step in element.get("steps", []) 
-                                   if step.get("result", {}).get("status", "").lower() == "failed"]
-                    
-                    if failed_steps:
-                        failure = {
-                            "feature": feature_name,
-                            "scenario": element.get("name", "Unknown"),
-                            "tags": element.get("tags", []),
-                            "failed_step": failed_steps[-1].get("name", ""),
-                            "error_message": failed_steps[-1].get("result", {}).get("error_message", ""),
-                            "duration": element.get("duration", 0),
-                            "all_steps": element.get("steps", [])
-                        }
-                        failures.append(failure)
-        
+
+        for feature in detailed_results or []:
+            feature_name = feature.get("name", "Unknown Feature")
+
+            for scenario in feature.get("elements", []):
+                if scenario.get("status", "").lower() != "failed":
+                    continue
+
+                failed_steps = [
+                    step for step in scenario.get("steps", [])
+                    if step.get("result", {})
+                    .get("status", "")
+                    .lower() == "failed"
+                ]
+
+                if not failed_steps:
+                    continue
+
+                last_failed = failed_steps[-1]
+
+                failures.append({
+                    "feature": feature_name,
+                    "scenario": scenario.get("name", "Unknown Scenario"),
+                    "failed_step": last_failed.get("name", ""),
+                    "error_message": last_failed
+                        .get("result", {})
+                        .get("error_message", ""),
+                    "all_steps": scenario.get("steps", []),
+                })
+
         return failures
-    
+
+    # --------------------------------------------------
     def _analyze_failure(self, failure: dict) -> dict:
-        """Analyze a single failure and create defect information"""
-        prompt = f"""Analyze the following test failure and create a defect report:
+        """
+        Analyze a single failure using LLM (advisory).
+        """
 
-Feature: {failure.get('feature', 'N/A')}
-Scenario: {failure.get('scenario', 'N/A')}
-Failed Step: {failure.get('failed_step', 'N/A')}
-Error Message: {failure.get('error_message', 'N/A')}
+        prompt = f"""
+FAILED SCENARIO ANALYSIS
 
-Provide a JSON response with:
+Feature: {failure.get('feature')}
+Scenario: {failure.get('scenario')}
+Failed Step: {failure.get('failed_step')}
+Error Message: {failure.get('error_message')}
+
+TASK:
+- Determine if this is a PRODUCT DEFECT or TEST ISSUE
+- Assign severity conservatively
+- Describe expected vs actual behavior
+- Suggest a fix if obvious
+
+Respond ONLY in JSON with:
 {{
-    "title": "Brief defect title",
-    "severity": "Critical|High|Medium|Low",
-    "category": "Functional|UI|Performance|Integration|Test Issue",
-    "description": "Detailed description of the defect",
-    "reproduction_steps": ["step1", "step2", ...],
-    "expected_behavior": "What should happen",
-    "actual_behavior": "What actually happened",
-    "root_cause_analysis": "Analysis of why this might be failing",
-    "suggested_fix": "Suggestions for fixing the issue",
-    "affected_scenario": "{failure.get('scenario', 'N/A')}",
-    "error_type": "Type of error (AssertionError, TimeoutError, etc.)"
-}}"""
-        
+  "title": "...",
+  "severity": "Critical|High|Medium|Low",
+  "category": "Functional|UI|Integration|Test Issue",
+  "description": "...",
+  "expected_behavior": "...",
+  "actual_behavior": "...",
+  "root_cause_analysis": "...",
+  "suggested_fix": "..."
+}}
+"""
+
         try:
-            response = self.groq_client.generate_structured_response(prompt, self.system_prompt)
-            
-            # Ensure we have a valid defect structure
-            if isinstance(response, dict) and "title" in response:
-                defect = {
-                    "id": f"DEF-{datetime.now().strftime('%Y%m%d%H%M%S')}-{len(response)}",
-                    "title": response.get("title", "Untitled Defect"),
-                    "severity": response.get("severity", "Medium"),
-                    "category": response.get("category", "Functional"),
-                    "description": response.get("description", ""),
-                    "reproduction_steps": response.get("reproduction_steps", []),
-                    "expected_behavior": response.get("expected_behavior", ""),
-                    "actual_behavior": response.get("actual_behavior", ""),
-                    "root_cause_analysis": response.get("root_cause_analysis", ""),
-                    "suggested_fix": response.get("suggested_fix", ""),
-                    "affected_scenario": response.get("affected_scenario", failure.get("scenario", "")),
-                    "error_message": failure.get("error_message", ""),
-                    "feature": failure.get("feature", ""),
-                    "timestamp": datetime.now().isoformat()
-                }
-                return defect
-        except Exception as e:
-            # Fallback defect creation
+            response = self.llm.generate_structured_response(
+                prompt=prompt,
+                system_prompt=self.system_prompt
+            )
+
+            if not isinstance(response, dict):
+                return None
+
             return {
-                "id": f"DEF-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "title": f"Test Failure in {failure.get('scenario', 'Unknown Scenario')}",
-                "severity": "Medium",
-                "category": "Functional",
-                "description": f"Test scenario failed with error: {failure.get('error_message', 'Unknown error')}",
-                "reproduction_steps": [failure.get("failed_step", "")],
-                "expected_behavior": "Test should pass",
-                "actual_behavior": f"Test failed: {failure.get('error_message', 'Unknown error')}",
-                "affected_scenario": failure.get("scenario", ""),
-                "error_message": failure.get("error_message", ""),
-                "feature": failure.get("feature", ""),
+                "id": f"DEF-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+                "feature": failure.get("feature"),
+                "scenario": failure.get("scenario"),
+                "failed_step": failure.get("failed_step"),
+                "error_message": failure.get("error_message"),
+                "title": response.get("title", "Test Failure"),
+                "severity": response.get("severity", "Medium"),
+                "category": response.get("category", "Test Issue"),
+                "description": response.get("description", ""),
+                "expected_behavior": response.get("expected_behavior", ""),
+                "actual_behavior": response.get("actual_behavior", ""),
+                "root_cause_analysis": response.get("root_cause_analysis", ""),
+                "suggested_fix": response.get("suggested_fix", ""),
                 "timestamp": datetime.now().isoformat(),
-                "analysis_error": str(e)
             }
-        
-        return None
-    
+
+        except Exception as e:
+            # Hard fallback — never crash pipeline
+            return {
+                "id": f"DEF-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+                "feature": failure.get("feature"),
+                "scenario": failure.get("scenario"),
+                "failed_step": failure.get("failed_step"),
+                "title": "Failure Analysis Error",
+                "severity": "Medium",
+                "category": "Test Issue",
+                "description": str(e),
+                "timestamp": datetime.now().isoformat(),
+            }
+
+    # --------------------------------------------------
     def _deduplicate_defects(self, defects: list) -> list:
-        """Group similar defects together"""
-        unique_defects = []
-        seen_titles = set()
-        
+        """
+        Deduplicate defects by normalized title.
+        """
+        seen = set()
+        unique = []
+
         for defect in defects:
-            # Simple deduplication by title similarity
-            title = defect.get("title", "").lower()
-            if title not in seen_titles:
-                seen_titles.add(title)
-                unique_defects.append(defect)
-            else:
-                # Update existing defect with additional info
-                for existing in unique_defects:
-                    if existing.get("title", "").lower() == title:
-                        if defect.get("affected_scenario") not in existing.get("affected_scenarios", []):
-                            if "affected_scenarios" not in existing:
-                                existing["affected_scenarios"] = [existing.get("affected_scenario")]
-                            existing["affected_scenarios"].append(defect.get("affected_scenario"))
-                        break
-        
-        return unique_defects
-    
+            key = self._safe_str(defect.get("title")).lower()
+            if key not in seen:
+                seen.add(key)
+                unique.append(defect)
+
+        return unique
+
+    # --------------------------------------------------
     def _calculate_severity_distribution(self, defects: list) -> dict:
-        """Calculate distribution of defects by severity"""
         distribution = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
-        
         for defect in defects:
             severity = defect.get("severity", "Medium")
             if severity in distribution:
                 distribution[severity] += 1
-        
         return distribution
-    
-    def _generate_defect_report(self, defects_result: dict) -> str:
-        """Generate human-readable defect report"""
+
+    # --------------------------------------------------
+    def _persist_defect_artifacts(self, result: dict, timestamp: str):
+        """
+        Persist JSON + text defect reports.
+        """
+
+        json_path = os.path.join(
+            Config.REPORTS_DIR, f"defects_{timestamp}.json"
+        )
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+
+        result["defects_file_path"] = json_path
+
+        text_report = self._generate_text_report(result)
+        txt_path = os.path.join(
+            Config.REPORTS_DIR, f"defect_report_{timestamp}.txt"
+        )
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write(text_report)
+
+        result["defect_report_path"] = txt_path
+
+    # --------------------------------------------------
+    def _generate_text_report(self, result: dict) -> str:
+        """
+        Human-readable defect report.
+        """
+
         lines = [
             "=" * 80,
             "DEFECT REPORT",
             "=" * 80,
             f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"Total Defects Found: {defects_result['defects_found']}",
+            f"Total Defects: {result.get('defects_found', 0)}",
             "",
             "SEVERITY DISTRIBUTION",
             "-" * 80,
         ]
-        
-        for severity, count in defects_result.get("severity_distribution", {}).items():
-            lines.append(f"{severity}: {count}")
-        
+
+        for sev, count in result.get("severity_distribution", {}).items():
+            lines.append(f"{sev}: {count}")
+
         lines.append("")
         lines.append("DEFECT DETAILS")
         lines.append("-" * 80)
-        
-        for defect in defects_result.get("defects", []):
+
+        for defect in result.get("defects", []):
             lines.extend([
                 "",
-                f"Defect ID: {defect.get('id', 'N/A')}",
-                f"Title: {defect.get('title', 'N/A')}",
-                f"Severity: {defect.get('severity', 'N/A')}",
-                f"Category: {defect.get('category', 'N/A')}",
-                f"Feature: {defect.get('feature', 'N/A')}",
-                f"Scenario: {defect.get('affected_scenario', 'N/A')}",
+                f"ID: {self._safe_str(defect.get('id'))}",
+                f"Title: {self._safe_str(defect.get('title'))}",
+                f"Severity: {self._safe_str(defect.get('severity'))}",
+                f"Category: {self._safe_str(defect.get('category'))}",
+                f"Feature: {self._safe_str(defect.get('feature'))}",
+                f"Scenario: {self._safe_str(defect.get('scenario'))}",
                 "",
                 "Description:",
-                defect.get("description", "N/A"),
+                self._safe_str(defect.get("description")),
                 "",
-                "Reproduction Steps:",
-                "\n".join([f"  {i+1}. {step}" for i, step in enumerate(defect.get("reproduction_steps", []))]),
+                "Expected Behavior:",
+                self._safe_str(defect.get("expected_behavior")),
                 "",
-                f"Expected Behavior: {defect.get('expected_behavior', 'N/A')}",
-                f"Actual Behavior: {defect.get('actual_behavior', 'N/A')}",
+                "Actual Behavior:",
+                self._safe_str(defect.get("actual_behavior")),
                 "",
-                "Root Cause Analysis:",
-                defect.get("root_cause_analysis", "N/A"),
+                "Root Cause:",
+                self._safe_str(defect.get("root_cause_analysis")),
                 "",
                 "Suggested Fix:",
-                defect.get("suggested_fix", "N/A"),
-                "",
-                "Error Message:",
-                defect.get("error_message", "N/A"),
+                self._safe_str(defect.get("suggested_fix")),
                 "",
                 "-" * 80,
             ])
-        
-        return "\n".join(lines)
 
+        return "\n".join(lines)
