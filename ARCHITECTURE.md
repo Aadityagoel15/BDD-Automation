@@ -4,6 +4,8 @@
 
 The BDD Automation AI Agents system uses a pipeline architecture where each agent handles a specific stage of the BDD workflow. All agents communicate with Groq API for AI-powered processing.
 
+**Supported project types:** Web and API (these are the tested paths in the current release).
+
 ## Pipeline Flow
 
 ```

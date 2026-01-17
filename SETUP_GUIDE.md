@@ -64,7 +64,7 @@ The framework uses the following priority for configuration:
 1. **Command-line arguments** (highest priority)
 2. **Requirements file** (URLs and data in requirements)
 3. **`.env` file** (environment variables)
-4. **`bdd.config.yaml`** (project-level defaults)
+4. **`bdd.config.yaml`** (project-level defaults for web/api)
 5. **Auto-detection** (fallback)
 
 ### Option 1: Configure via `.env` File (Recommended)
@@ -88,7 +88,7 @@ Edit `bdd.config.yaml` in the project root:
 
 ```yaml
 project:
-  type: web          # api | web | mobile | data | backend
+  type: web          # api | web
   base_url: https://your-application-url.com
 ```
 

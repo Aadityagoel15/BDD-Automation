@@ -54,7 +54,7 @@ You may optionally define project‑level defaults using `bdd.config.yaml`:
 
 ```yaml
 project:
-  type: api        # api | web | mobile | data | backend
+  type: api        # api | web
   base_url: http://localhost:8080
 ```
 

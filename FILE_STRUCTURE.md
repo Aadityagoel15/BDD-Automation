@@ -11,7 +11,7 @@
 
 ## ⚙️ Configuration & setup
 - `env_template.txt` → copy to `.env` (add `GROQ_API_KEY`; set `BASE_URL` for web runs)
-- `bdd.config.yaml` (optional project defaults: `type`, `base_url`)
+- `bdd.config.yaml` (optional project defaults: `type` = `web` or `api`, `base_url`)
 - `setup_and_run.bat` (Windows helper)
 
 ## 📚 Documentation in repo

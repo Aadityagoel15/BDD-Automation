@@ -4,11 +4,8 @@ A **general-purpose** BDD (Behavior-Driven Development) automation framework pow
 
 ## 🎯 What Can You Test?
 
-- ✅ **Web Applications** - Any website (login flows, e-commerce, dashboards, etc.)
+- ✅ **Web Applications** - Any website (desktop or mobile web)
 - ✅ **REST APIs** - Any API endpoint (CRUD operations, authentication, etc.)
-- ✅ **Mobile Web Apps** - Responsive web applications
-- ✅ **Backend Services** - Microservices, databases, data pipelines
-- ✅ **Custom Applications** - Any application with UI or API
 
 **No hardcoding required** - Works with any URL, any credentials, any workflow!
 
@@ -241,13 +238,13 @@ GROQ_MODEL=llama-3.1-8b-instant
 
 ```yaml
 project:
-  type: web          # api | web | mobile | data | backend
+  type: web          # api | web
   base_url: https://your-application-url.com
 ```
 
 **Configuration Priority:**
 1. `.env` file values (API key, BASE_URL, model)
-2. `bdd.config.yaml` project block
+2. `bdd.config.yaml` project block (`type: web` or `api`)
 3. Auto-detection from requirements (fallback)
 
 See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed configuration options.
@@ -354,8 +351,7 @@ This is a general-purpose framework designed to work with any website or API.
 **Framework Design Principles:**
 - ✅ No hardcoded URLs or credentials
 - ✅ Configuration-driven (no code changes needed)
-- ✅ Works with any domain, any workflow
-- ✅ Supports web, API, mobile, and backend testing
+- ✅ Works with any domain, any workflow (tested flows: Web, API)
 
 ## 📝 License
 
